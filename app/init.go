@@ -2,7 +2,8 @@ package app
 
 import (
 	"fmt"
-       	"os"
+	"io"
+	"os"
 	"path/filepath"
 )
 
@@ -28,6 +29,26 @@ func InitNode() error {
 
 	fmt.Println("ABABIL node initialized successfully.")
 	fmt.Println("Home:", nodeHome)
+	fmt.Println("Config :", filepath.Join(nodeHome, "config"))
+	fmt.Println("Data   :", filepath.Join(nodeHome, "data"))
+	fmt.Println("Keys   :", filepath.Join(nodeHome, "keys"))
 
 	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
