@@ -48,6 +48,11 @@ if err := SaveBlock(block); err != nil {
 }
         fmt.Println("RPC Server : tcp://0.0.0.0:26657")
         fmt.Println("P2P Server : tcp://0.0.0.0:26656")
+        TestTransaction()
+        TestWallet()
+        TestAccount()
+        TestBalance()
+        TestTransfer()
         fmt.Println("Node Status : Running")
         fmt.Println("=================================")
 }
