@@ -53,6 +53,8 @@ if err := SaveBlock(block); err != nil {
         TestAccount()
         TestBalance()
         TestTransfer()
+        TestMempool()
+        TestBlockProducer()
         fmt.Println("Node Status : Running")
         fmt.Println("=================================")
 }
