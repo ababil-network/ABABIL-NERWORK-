@@ -35,7 +35,17 @@ if err := LoadGenesis(); err != nil {
         }
 
         LogInfo("Initializing database...")
+if err := InitDatabase(); err != nil {
+        LogError("Failed to initialize database")
+        return
+}
         fmt.Println("Database : OK")
+        block := CreateGenesisBlock()
+
+if err := SaveBlock(block); err != nil {
+        LogError("Failed to save genesis block")
+        return
+}
         fmt.Println("RPC Server : tcp://0.0.0.0:26657")
         fmt.Println("P2P Server : tcp://0.0.0.0:26656")
         fmt.Println("Node Status : Running")
