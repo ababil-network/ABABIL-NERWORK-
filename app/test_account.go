@@ -1,8 +1,14 @@
 package app
 
 func TestAccount() {
+
+	if NodeWallet == nil {
+		LogError("Node Wallet not initialized")
+		return
+	}
+
 	account := NewAccount(
-		"0xABA4F2D81C8A97E31B5A8F4D0E91C2A7B84E1D3",
+		NodeWallet.Address,
 		1000,
 	)
 

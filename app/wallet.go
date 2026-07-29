@@ -1,17 +1,35 @@
 package app
 
 import (
-	"crypto/rand"
+	"crypto/ecdsa"
 	"encoding/hex"
+
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func GenerateWalletAddress() string {
-	b := make([]byte, 20)
+type Wallet struct {
+	PrivateKey string
+	PublicKey  string
+	Address    string
+}
 
-	_, err := rand.Read(b)
+func CreateWallet() (*Wallet, error) {
+
+	privateKey, err := crypto.GenerateKey()
 	if err != nil {
-		return ""
+		return nil, err
 	}
 
-	return "ababil1" + hex.EncodeToString(b)
+	privateBytes := crypto.FromECDSA(privateKey)
+
+	publicKey := privateKey.Public().(*ecdsa.PublicKey)
+	publicBytes := crypto.FromECDSAPub(publicKey)
+
+	address := crypto.PubkeyToAddress(*publicKey)
+
+	return &Wallet{
+		PrivateKey: hex.EncodeToString(privateBytes),
+		PublicKey:  hex.EncodeToString(publicBytes),
+		Address:    address.Hex(),
+	}, nil
 }

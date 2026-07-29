@@ -1,13 +1,28 @@
 package app
 
 func TestTransaction() {
+
 	tx := NewTransaction(
-		"ABABIL1FROM",
-		"ABABIL1TO",
+		NodeWallet.Address,
+		"0x1111111111111111111111111111111111111111",
 		100,
 	)
 
-	if err := SaveTransaction(tx); err != nil {
-		LogError(err.Error())
+	LogInfo("=================================")
+	LogInfo("Transaction Created")
+	LogInfo("=================================")
+	LogInfo("Hash      : " + tx.Hash)
+	LogInfo("Signature : " + tx.Signature)
+
+	signed := SignedTransaction{
+		Hash:      tx.Hash,
+		Signature: tx.Signature,
+		PublicKey: tx.PublicKey,
+	}
+
+	if VerifyTransaction(signed) {
+		LogInfo("Transaction Verify : VALID")
+	} else {
+		LogError("Transaction Verify : INVALID")
 	}
 }
