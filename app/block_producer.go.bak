@@ -17,12 +17,11 @@ func GenerateBlockHash() string {
 	return hex.EncodeToString(b)
 }
 
-func ProduceBlock(height int, previousHash string, mempool *Mempool) Block {
+func ProduceBlock(height int, mempool *Mempool) Block {
 
 	block := Block{
 		Height:       height,
 		Hash:         GenerateBlockHash(),
-		PreviousHash: previousHash,
 		Timestamp:    time.Now().Format(time.RFC3339),
 		Transactions: mempool.Transactions,
 	}

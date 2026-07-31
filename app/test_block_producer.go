@@ -12,7 +12,7 @@ func TestBlockProducer() {
 
 	mempool.AddTransaction(tx)
 
-	block := ProduceBlock(1, mempool)
+	block := ProduceBlock(1, "GENESIS_BLOCK", mempool)
 
 	LogInfo("New Block Produced")
 	LogInfo("Block Height : 1")

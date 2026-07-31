@@ -12,4 +12,7 @@ func NewMempool() *Mempool {
 
 func (m *Mempool) AddTransaction(tx Transaction) {
 	m.Transactions = append(m.Transactions, tx)
+
+	// Sort by priority
+	m.SortByPriority()
 }

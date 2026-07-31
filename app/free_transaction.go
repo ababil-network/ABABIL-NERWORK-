@@ -37,7 +37,7 @@ func (m *FreeTransactionManager) Remaining(address string) uint64 {
 			Count: 0,
 			Day:   today,
 		}
-		return DailyFreeTransactionLimit
+		return WalletFreeLimit(address)
 	}
 
 	if info.Day != today {
@@ -49,7 +49,13 @@ func (m *FreeTransactionManager) Remaining(address string) uint64 {
 		return 0
 	}
 
-	return DailyFreeTransactionLimit - info.Count
+        limit := WalletFreeLimit(address)
+
+if info.Count >= limit {
+	return 0
+}
+
+return limit - info.Count
 }
 
 func (m *FreeTransactionManager) Use(address string) bool {
@@ -72,8 +78,10 @@ func (m *FreeTransactionManager) Use(address string) bool {
 		info.Count = 0
 	}
 
-	if info.Count >= DailyFreeTransactionLimit {
-		return false
+	limit := WalletFreeLimit(address)
+
+if info.Count >= limit {
+	return false
 	}
 
 	info.Count++

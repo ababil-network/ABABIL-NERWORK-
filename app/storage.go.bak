@@ -2,7 +2,6 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -24,7 +23,7 @@ func SaveBlock(block Block) error {
 		return err
 	}
 
-	file := filepath.Join(dir, fmt.Sprintf("%d.json", block.Height))
+	file := filepath.Join(dir, "genesis.json")
 
 	return os.WriteFile(file, data, 0644)
 }

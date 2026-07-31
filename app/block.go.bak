@@ -8,7 +8,6 @@ import (
 type Block struct {
         Height       int
         Hash         string
-        PreviousHash string
         Timestamp    string
         Transactions []Transaction
 }
