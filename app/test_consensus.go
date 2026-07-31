@@ -1,6 +1,7 @@
 package app
 
 func TestConsensus() {
+        LogInfo("Entering TestConsensus")
 
 	RegisterValidator(
 		"0xValidator111111111111111111111111111111",

@@ -66,6 +66,9 @@ func StartNode() {
 	TestTransfer()
 	TestMempool()
 	TestBlockProducer()
+        LogInfo("Before TestConsensus")
+        TestConsensus()
+        TestPeerManager()
 
 	fmt.Println("Node Status : Running")
 	fmt.Println("=================================")
