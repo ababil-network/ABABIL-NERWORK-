@@ -5,17 +5,17 @@ func TestConsensus() {
 
 	RegisterValidator(
 		"0xValidator111111111111111111111111111111",
-		100,
+		100, 5,
 	)
 
 	RegisterValidator(
 		"0xValidator222222222222222222222222222222",
-		80,
+		80, 5,
 	)
 
 	RegisterValidator(
 		"0xValidator333333333333333333333333333333",
-		60,
+		60, 5,
 	)
 
 	leader := GetLeader()

@@ -1,26 +1,57 @@
 package app
 
 type Validator struct {
-	Address string
-	Power   uint64
-	Active  bool
+	ID           uint64
+	Address      string
+	ConsensusKey string
+	Power        uint64
+	Commission   uint8
+	Active       bool
+	Jailed       bool
+	MissedBlocks uint64
+	Genesis      bool
 }
 
 var Validators []Validator
 
 func AddValidator(address string, power uint64) {
+
+	for _, v := range Validators {
+		if v.Address == address {
+			return
+		}
+	}
+
 	Validators = append(Validators, Validator{
-		Address: address,
-		Power:   power,
-		Active:  true,
+		ID:           uint64(len(Validators) + 1),
+		Address:      address,
+		ConsensusKey: "",
+		Power:        power,
+		Commission:   5,
+		Active:       true,
+		Jailed:       false,
+		MissedBlocks: 0,
+		Genesis:      false,
 	})
 }
 
+func AddGenesisValidator(address string, power uint64) {
+
+	AddValidator(address, power)
+
+	if len(Validators) > 0 {
+		Validators[0].Genesis = true
+	}
+}
+
 func GetLeader() *Validator {
+
 	for i := range Validators {
-		if Validators[i].Active {
+
+		if Validators[i].Active && !Validators[i].Jailed {
 			return &Validators[i]
 		}
 	}
+
 	return nil
 }
