@@ -29,8 +29,7 @@ func StartP2PServer() error {
 
 			LogInfo("Peer Connected : " + conn.RemoteAddr().String())
 
-			go HandleTransaction(conn)
-                        go HandleBlock(conn)
+			go HandlePeer(conn)
 		}
 	}()
 
