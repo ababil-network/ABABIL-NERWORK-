@@ -55,3 +55,26 @@ func GetLeader() *Validator {
 
 	return nil
 }
+var LeaderIndex int
+
+func RotateLeader() *Validator {
+
+	if len(Validators) == 0 {
+		return nil
+	}
+
+	for {
+
+		LeaderIndex++
+
+		if LeaderIndex >= len(Validators) {
+			LeaderIndex = 0
+		}
+
+		if Validators[LeaderIndex].Active &&
+			!Validators[LeaderIndex].Jailed {
+
+			return &Validators[LeaderIndex]
+		}
+	}
+}
