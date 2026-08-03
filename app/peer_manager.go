@@ -39,3 +39,14 @@ func GetPeers() []Peer {
 func PeerCount() int {
 	return len(Peers)
 }
+func HasPeer(address string) bool {
+
+	for _, p := range Peers {
+
+		if p.Address == address && p.Active {
+			return true
+		}
+	}
+
+	return false
+}

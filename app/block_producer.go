@@ -29,6 +29,13 @@ func ProduceBlock(height int, previousHash string, mempool *Mempool) Block {
 
 	// Clear mempool after block creation
 	mempool.Transactions = nil
+leader := GetLeader()
 
+if leader != nil {
+	LogInfo("=================================")
+	LogInfo("Block Produced")
+	LogInfo("Leader : " + leader.Address)
+	LogInfo("=================================")
+}
 	return block
 }

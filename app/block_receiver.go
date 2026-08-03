@@ -27,4 +27,20 @@ func HandleBlock(conn net.Conn) {
 	LogInfo("Height : " + strconv.Itoa(block.Height))
 	LogInfo("Hash : " + block.Hash)
 	LogInfo("=================================")
+latest, err := GetLatestBlock()
+if err != nil {
+	LogError(err.Error())
+	return
+}
+
+err = ValidateBlock(block, latest)
+if err != nil {
+	LogError(err.Error())
+	return
+}
+
+CommitBlock(block)
+
+LogInfo("Block Successfully Added")
+
 }

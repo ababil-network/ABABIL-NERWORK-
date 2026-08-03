@@ -42,3 +42,10 @@ func (n *NonceManager) Verify(address string, nonce uint64) bool {
 
 	return nonce == current+1
 }
+func (n *NonceManager) Reset(address string) {
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.nonces[address] = 0
+}

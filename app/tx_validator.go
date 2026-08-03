@@ -48,6 +48,10 @@ func ValidateTransaction(tx Transaction) error {
 		return errors.New("invalid gas price")
 	}
 
+        // Balance Verification
+        if GetBalance(tx.From) < (tx.Amount + tx.Fee) {
+         return errors.New("insufficient balance")
+}
 	// Success
 	NodeReplay.Add(tx.Hash)
 	NodeNonce.Set(tx.From, tx.Nonce)

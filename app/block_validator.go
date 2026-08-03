@@ -39,6 +39,6 @@ func ValidateBlock(block Block, previous Block) error {
 	if block.Hash == "" {
 		return errors.New("invalid block hash")
 	}
-
+        
 	return nil
 }
