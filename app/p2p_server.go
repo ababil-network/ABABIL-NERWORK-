@@ -44,11 +44,40 @@ func StartP2PServer() error {
 
 			atomic.AddInt32(&CurrentPeers, 1)
 
+			ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+			if err != nil {
+				conn.Close()
+				atomic.AddInt32(&CurrentPeers, -1)
+				continue
+			}
+
+			if !NodeRateLimiter.Allow(ip) {
+
+				duration := NodeBan.HandleViolation(ip)
+
+				if duration == 0 {
+					LogInfo("Warning : " + ip)
+				} else {
+					LogInfo("Peer Banned : " + ip)
+				}
+
+				conn.Close()
+				atomic.AddInt32(&CurrentPeers, -1)
+				continue
+			}
+
 			LogInfo("Peer Connected : " + conn.RemoteAddr().String())
 
 			go HandlePeer(conn)
 		}
 	}()
+	go ConnectSeeds()
+
+	StartReconnectWorker()
+
+	LogInfo("Seed Discovery Started")
+	LogInfo("Reconnect Worker Started")
 
 	return nil
+
 }
