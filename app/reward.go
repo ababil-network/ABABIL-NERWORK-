@@ -22,15 +22,16 @@ type RewardRecord struct {
 	ID        uint64
 	Validator string
 	Block     uint64
-	Fee        uint64
-	Reward     uint64
-	Time       time.Time
-	Claimed    bool
+	Fee       uint64
+	Reward    uint64
+	Time      time.Time
+	Claimed   bool
 }
 
 var CurrentRewardPool RewardPool
 
 var RewardHistory []RewardRecord
+
 func CalculateReward(fee uint64, mature bool) RewardPool {
 
 	var pool RewardPool
@@ -70,12 +71,28 @@ func DistributeReward(
 	fee uint64,
 	mature bool,
 ) {
+	if fee == 0 {
+		return
+	}
 
+	leader := GetLeader()
+
+	if leader == nil {
+		return
+	}
+
+	if leader.Address != validator {
+		return
+	}
+
+	if leader.Jailed || !leader.Active {
+		return
+	}
 	pool := CalculateReward(fee, mature)
 
 	UpdateRewardPool(pool)
-        
-        DepositTreasury(pool.Treasury, pool.Security)
+
+	DepositTreasury(pool.Treasury, pool.Security)
 
 	record := RewardRecord{
 		Validator: validator,
@@ -103,8 +120,11 @@ func ClaimReward(validator string) uint64 {
 		}
 	}
 
-        if total > 0 {
-        CreditBalance(validator, total)
-}
+	if total > 0 {
+		CreditBalance(validator, total)
+	}
 	return total
+}
+func GetRewardPool() RewardPool {
+	return CurrentRewardPool
 }

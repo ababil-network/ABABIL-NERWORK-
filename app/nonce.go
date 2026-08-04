@@ -1,6 +1,9 @@
 package app
 
-import "sync"
+import (
+	"math"
+	"sync"
+)
 
 type NonceManager struct {
 	mu     sync.RWMutex
@@ -28,7 +31,9 @@ func (n *NonceManager) Set(address string, nonce uint64) {
 func (n *NonceManager) Next(address string) uint64 {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-
+	if n.nonces[address] == math.MaxUint64 {
+		return n.nonces[address]
+	}
 	n.nonces[address]++
 
 	return n.nonces[address]

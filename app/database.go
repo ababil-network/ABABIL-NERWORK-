@@ -13,8 +13,12 @@ func InitDatabase() error {
 	}
 
 	dbPath := filepath.Join(home, ".ababil", "data")
+	blocksPath := filepath.Join(dbPath, "blocks")
 
 	if err := os.MkdirAll(dbPath, 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(blocksPath, 0755); err != nil {
 		return err
 	}
 

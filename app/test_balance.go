@@ -8,7 +8,10 @@ func TestBalance() {
 
 	LogInfo("Current Balance : 1000 ABABIL")
 
-	AddBalance(&account, 500)
+	if err := AddBalance(&account, 500); err != nil {
+		LogError(err.Error())
+		return
+	}
 	LogInfo("After Add : 1500 ABABIL")
 
 	err := SubBalance(&account, 300)

@@ -1,9 +1,21 @@
 package app
 
-import "net"
+import (
+	"net"
+	"sync/atomic"
+	"time"
+)
 
 func HandlePeer(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		conn.Close()
+
+		if atomic.LoadInt32(&CurrentPeers) > 0 {
+			atomic.AddInt32(&CurrentPeers, -1)
+		}
+	}()
+
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
 
 	_, err := ReceiveHandshake(conn)
 	if err != nil {

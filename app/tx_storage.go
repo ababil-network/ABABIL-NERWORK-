@@ -7,9 +7,9 @@ import (
 )
 
 func SaveTransaction(tx Transaction) error {
-if err := ValidateTransaction(tx); err != nil {
-    return err
-}
+	if err := ValidateTransaction(tx); err != nil {
+		return err
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -20,13 +20,17 @@ if err := ValidateTransaction(tx); err != nil {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-
+	if tx.ID == "" {
+		return os.ErrInvalid
+	}
 	data, err := json.MarshalIndent(tx, "", "  ")
 	if err != nil {
 		return err
 	}
 
 	file := filepath.Join(dir, tx.ID+".json")
-
+	if _, err := os.Stat(file); err == nil {
+		return os.ErrExist
+	}
 	return os.WriteFile(file, data, 0644)
 }

@@ -16,12 +16,18 @@ func ApplyTransaction(tx Transaction) error {
 	CreditBalance(tx.To, tx.Amount)
 
 	// Reward Distribution
-	DistributeReward(
-		GetLeader().Address,
-		0,
-		tx.Fee,
-		false,
-	)
+	leader := GetLeader()
+
+	if leader != nil {
+		DistributeReward(
+			leader.Address,
+			0,
+			tx.Fee,
+			false,
+		)
+	}
+	NodeReplay.Add(tx.Hash)
+	NodeNonce.Set(tx.From, tx.Nonce)
 
 	return nil
 }

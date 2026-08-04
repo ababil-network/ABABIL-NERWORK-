@@ -7,6 +7,13 @@ import (
 )
 
 func SaveAccount(account Account) error {
+	if account.Address == "" {
+		return os.ErrInvalid
+	}
+
+	if !IsValidAddress(account.Address) {
+		return os.ErrInvalid
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -24,6 +31,8 @@ func SaveAccount(account Account) error {
 	}
 
 	file := filepath.Join(dir, account.Address+".json")
-
+	if _, err := os.Stat(file); err == nil {
+		return os.ErrExist
+	}
 	return os.WriteFile(file, data, 0644)
 }

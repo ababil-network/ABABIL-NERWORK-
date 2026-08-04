@@ -6,7 +6,9 @@ func Transfer(from *Account, to *Account, amount uint64) error {
 		return err
 	}
 
-	AddBalance(to, amount)
+	if err := AddBalance(to, amount); err != nil {
+		return err
+	}
 
 	return nil
 }

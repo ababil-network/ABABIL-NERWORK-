@@ -11,6 +11,7 @@ type TreasuryRecord struct {
 	ID     uint64
 	Type   string
 	Amount uint64
+	Reason string
 	Block  uint64
 	Time   time.Time
 }
@@ -27,6 +28,7 @@ func DepositTreasury(ecosystem uint64, security uint64) {
 		ID:     uint64(len(TreasuryHistory) + 1),
 		Type:   "Deposit",
 		Amount: ecosystem + security,
+		Reason: "Reward Distribution",
 		Block:  0,
 		Time:   time.Now(),
 	}
