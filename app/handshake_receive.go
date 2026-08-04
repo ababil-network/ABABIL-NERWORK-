@@ -25,11 +25,15 @@ func ReceiveHandshake(conn net.Conn) (*Handshake, error) {
 	if hs.Network != "ABABIL Network" {
 		return nil, ErrInvalidNetwork
 	}
+	if hs.NodeID == "" {
+		return nil, ErrInvalidNodeID
+	}
 
 	LogInfo("=================================")
 	LogInfo("Handshake Verified")
 	LogInfo("Node : " + hs.NodeName)
 	LogInfo("Version : " + hs.NodeVersion)
+	LogInfo("Node ID : " + hs.NodeID)
 	LogInfo("=================================")
 
 	return &hs, nil

@@ -6,7 +6,12 @@ import (
 
 func ConnectPeer(address string) error {
 
-	conn, err := net.Dial("tcp", address)
+	d := net.Dialer{
+		Timeout: NodeNetworkConfig.HandshakeTimeout,
+	}
+
+	conn, err := d.Dial("tcp", address)
+
 	if err != nil {
 		return err
 	}
@@ -15,7 +20,7 @@ func ConnectPeer(address string) error {
 	LogInfo("Connected To Peer")
 	LogInfo("Peer : " + conn.RemoteAddr().String())
 	LogInfo("=================================")
-
+	go HandlePeer(conn)
 	conn.Close()
 
 	return nil

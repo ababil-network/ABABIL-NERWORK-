@@ -15,7 +15,7 @@ func HandlePeer(conn net.Conn) {
 		}
 	}()
 
-	conn.SetDeadline(time.Now().Add(15 * time.Second))
+	conn.SetDeadline(time.Now().Add(NodeNetworkConfig.HandshakeTimeout))
 
 	_, err := ReceiveHandshake(conn)
 	if err != nil {
@@ -27,4 +27,16 @@ func HandlePeer(conn net.Conn) {
 	LogInfo("Peer Session Started")
 	LogInfo("Remote : " + conn.RemoteAddr().String())
 	LogInfo("=================================")
+	for {
+
+		conn.SetDeadline(time.Now().Add(NodeNetworkConfig.HeartbeatDelay))
+
+		time.Sleep(5 * time.Second)
+
+		if NodeBan.IsBanned(conn.RemoteAddr().String()) {
+			LogInfo("Peer Disconnected : " + conn.RemoteAddr().String())
+			return
+		}
+
+	}
 }

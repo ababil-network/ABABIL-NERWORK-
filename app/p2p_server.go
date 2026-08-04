@@ -7,8 +7,6 @@ import (
 
 var P2PListener net.Listener
 
-const MaxPeers int32 = 100
-
 var CurrentPeers int32
 
 func StartP2PServer() error {
@@ -37,7 +35,7 @@ func StartP2PServer() error {
 				LogInfo("P2P Server Stopped")
 				return
 			}
-			if atomic.LoadInt32(&CurrentPeers) >= MaxPeers {
+			if atomic.LoadInt32(&CurrentPeers) >= NodeNetworkConfig.MaxPeers {
 				conn.Close()
 				continue
 			}
