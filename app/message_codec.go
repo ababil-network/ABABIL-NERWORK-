@@ -7,6 +7,11 @@ func EncodeMessage(msg NetworkMessage) ([]byte, error) {
 }
 
 func DecodeMessage(data []byte) (NetworkMessage, error) {
+
+	if len(data) > NodeNetworkConfig.MaxMessageSize {
+		return NetworkMessage{}, ErrMessageTooLarge
+	}
+
 	var msg NetworkMessage
 
 	err := json.Unmarshal(data, &msg)

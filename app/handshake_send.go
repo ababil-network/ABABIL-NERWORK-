@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"net"
 	"time"
 )
@@ -21,5 +20,5 @@ func SendHandshake(conn net.Conn) error {
 		Timestamp: time.Now().Unix(),
 	}
 
-	return json.NewEncoder(conn).Encode(hs)
+	return SendJSON(conn, hs)
 }

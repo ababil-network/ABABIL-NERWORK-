@@ -1,14 +1,13 @@
 package app
 
 import (
-	"encoding/json"
 	"net"
 )
 
 func DispatchMessage(conn net.Conn) error {
 	var msg NetworkMessage
 
-	err := json.NewDecoder(conn).Decode(&msg)
+	err := ReceiveJSON(conn, &msg)
 	if err != nil {
 		return err
 	}

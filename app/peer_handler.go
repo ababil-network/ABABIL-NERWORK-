@@ -8,6 +8,10 @@ import (
 
 func HandlePeer(conn net.Conn) {
 	defer func() {
+
+		ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+		NodeConnections.Remove(ip)
+
 		conn.Close()
 
 		if atomic.LoadInt32(&CurrentPeers) > 0 {

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"net"
 )
 
@@ -13,5 +12,5 @@ func BroadcastBlock(block Block, peer string) error {
 	}
 	defer conn.Close()
 
-	return json.NewEncoder(conn).Encode(block)
+	return SendJSON(conn, block)
 }

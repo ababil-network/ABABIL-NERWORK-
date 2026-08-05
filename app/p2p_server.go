@@ -43,6 +43,15 @@ func StartP2PServer() error {
 			atomic.AddInt32(&CurrentPeers, 1)
 
 			ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+
+			if !NodeConnections.Allow(ip) {
+				LogInfo("Too many connections from : " + ip)
+				conn.Close()
+				atomic.AddInt32(&CurrentPeers, -1)
+				continue
+			}
+
+			NodeConnections.Add(ip)
 			if err != nil {
 				conn.Close()
 				atomic.AddInt32(&CurrentPeers, -1)

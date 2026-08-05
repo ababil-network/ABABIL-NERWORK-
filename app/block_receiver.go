@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"io"
 	"net"
 	"strconv"
@@ -13,7 +12,7 @@ func HandleBlock(conn net.Conn) {
 
 	var block Block
 
-	err := json.NewDecoder(conn).Decode(&block)
+	err := ReceiveJSON(conn, &block)
 	if err != nil {
 		if err == io.EOF {
 			return
@@ -27,20 +26,20 @@ func HandleBlock(conn net.Conn) {
 	LogInfo("Height : " + strconv.Itoa(block.Height))
 	LogInfo("Hash : " + block.Hash)
 	LogInfo("=================================")
-latest, err := GetLatestBlock()
-if err != nil {
-	LogError(err.Error())
-	return
-}
+	latest, err := GetLatestBlock()
+	if err != nil {
+		LogError(err.Error())
+		return
+	}
 
-err = ValidateBlock(block, latest)
-if err != nil {
-	LogError(err.Error())
-	return
-}
+	err = ValidateBlock(block, latest)
+	if err != nil {
+		LogError(err.Error())
+		return
+	}
 
-CommitBlock(block)
+	CommitBlock(block)
 
-LogInfo("Block Successfully Added")
+	LogInfo("Block Successfully Added")
 
 }

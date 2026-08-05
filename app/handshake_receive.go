@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"net"
 )
 
@@ -9,7 +8,7 @@ func ReceiveHandshake(conn net.Conn) (*Handshake, error) {
 
 	var hs Handshake
 
-	err := json.NewDecoder(conn).Decode(&hs)
+	err := ReceiveJSON(conn, &hs)
 	if err != nil {
 		return nil, err
 	}

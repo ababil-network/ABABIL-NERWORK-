@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"io"
 	"net"
 )
@@ -12,20 +11,20 @@ func HandleTransaction(conn net.Conn) {
 
 	var tx Transaction
 
-	err := json.NewDecoder(conn).Decode(&tx)
+	err := ReceiveJSON(conn, &tx)
 	if err != nil {
 		if err == io.EOF {
-		return
-	}
-	LogError(err.Error())
+			return
+		}
+		LogError(err.Error())
 		return
 	}
 
-mempool := NewMempool()
-mempool.AddTransaction(tx)
+	mempool := NewMempool()
+	mempool.AddTransaction(tx)
 
-LogInfo("Added To Mempool")
-LogInfo("Pending Transactions : 1")
+	LogInfo("Added To Mempool")
+	LogInfo("Pending Transactions : 1")
 
 	LogInfo("=================================")
 	LogInfo("Transaction Received")
