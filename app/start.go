@@ -35,6 +35,14 @@ func StartNode() {
 	} else {
 		fmt.Println("Genesis : OK")
 	}
+	LogInfo("Initializing node identity...")
+
+	if err := InitNodeKey(); err != nil {
+		LogError(err.Error())
+		return
+	}
+
+	fmt.Println("Node Identity : OK")
 
 	LogInfo("Initializing database...")
 	if err := InitDatabase(); err != nil {
@@ -51,10 +59,10 @@ func StartNode() {
 	}
 
 	fmt.Println("RPC Server : tcp://0.0.0.0:26657")
-        if err := StartP2PServer(); err != nil {
-                LogError("Failed to start P2P server")
-                return
-        }
+	if err := StartP2PServer(); err != nil {
+		LogError("Failed to start P2P server")
+		return
+	}
 	fmt.Println("P2P Server : tcp://0.0.0.0:26656")
 
 	if err := InitNodeWallet(); err != nil {
@@ -70,11 +78,11 @@ func StartNode() {
 	TestTransfer()
 	TestMempool()
 	TestBlockProducer()
-        LogInfo("Before TestConsensus")
-        TestConsensus()
-        TestPeerManager()
-        TestP2PConnect()
-        TestTxBroadcast()
+	LogInfo("Before TestConsensus")
+	TestConsensus()
+	TestPeerManager()
+	TestP2PConnect()
+	TestTxBroadcast()
 
 	fmt.Println("Node Status : Running")
 	fmt.Println("=================================")
