@@ -52,6 +52,10 @@ func StartNode() {
 
 	fmt.Println("Database : OK")
 
+	InitMempool()
+
+	fmt.Println("Mempool : OK")
+
 	block := CreateGenesisBlock()
 	if err := SaveBlock(block); err != nil {
 		LogError("Failed to save genesis block")

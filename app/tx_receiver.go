@@ -26,8 +26,7 @@ func HandleTransaction(conn net.Conn) {
 		return
 	}
 
-	mempool := NewMempool()
-	mempool.AddTransaction(tx)
+	NodeMempool.AddTransaction(tx)
 
 	LogInfo("Added To Mempool")
 	LogInfo("Pending Transactions : 1")

@@ -2,7 +2,7 @@ package app
 
 func TestBlockProducer() {
 
-	mempool := NewMempool()
+	InitMempool()
 
 	tx := NewTransaction(
 		"0xABA1111111111111111111111111111111111111",
@@ -10,9 +10,9 @@ func TestBlockProducer() {
 		100,
 	)
 
-	mempool.AddTransaction(tx)
+	NodeMempool.AddTransaction(tx)
 
-	block := ProduceBlock(1, "GENESIS_BLOCK", mempool)
+	block := ProduceBlock(1, "GENESIS_BLOCK")
 
 	LogInfo("New Block Produced")
 	LogInfo("Block Height : 1")

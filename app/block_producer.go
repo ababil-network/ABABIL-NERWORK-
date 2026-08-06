@@ -17,25 +17,29 @@ func GenerateBlockHash() string {
 	return hex.EncodeToString(b)
 }
 
-func ProduceBlock(height int, previousHash string, mempool *Mempool) Block {
+func ProduceBlock(height int, previousHash string) Block {
+	txs := NodeMempool.Transactions
 
+	if len(txs) > MaxTransactionsPerBlock {
+		txs = txs[:MaxTransactionsPerBlock]
+	}
 	block := Block{
 		Height:       height,
 		Hash:         GenerateBlockHash(),
 		PreviousHash: previousHash,
 		Timestamp:    time.Now().Format(time.RFC3339),
-		Transactions: mempool.Transactions,
+		Transactions: txs,
 	}
 
-	// Clear mempool after block creation
-	mempool.Transactions = nil
-leader := GetLeader()
+	NodeMempool.RemoveProcessedTransactions(block.Transactions)
 
-if leader != nil {
-	LogInfo("=================================")
-	LogInfo("Block Produced")
-	LogInfo("Leader : " + leader.Address)
-	LogInfo("=================================")
-}
+	leader := GetLeader()
+
+	if leader != nil {
+		LogInfo("=================================")
+		LogInfo("Block Produced")
+		LogInfo("Leader : " + leader.Address)
+		LogInfo("=================================")
+	}
 	return block
 }
