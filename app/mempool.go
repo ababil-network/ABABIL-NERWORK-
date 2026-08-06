@@ -1,6 +1,9 @@
 package app
 
+import "time"
+
 const MaxMempoolTransactions = 10000
+const MempoolTransactionTTL = 30 * time.Minute
 
 type Mempool struct {
 	Transactions []Transaction
@@ -50,4 +53,20 @@ func (m *Mempool) RemoveProcessedTransactions(processed []Transaction) {
 
 func (m *Mempool) Count() int {
 	return len(m.Transactions)
+}
+
+func (m *Mempool) RemoveExpiredTransactions() {
+
+	now := time.Now()
+
+	var remaining []Transaction
+
+	for _, tx := range m.Transactions {
+
+		if now.Sub(tx.Timestamp) <= MempoolTransactionTTL {
+			remaining = append(remaining, tx)
+		}
+	}
+
+	m.Transactions = remaining
 }

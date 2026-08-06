@@ -20,6 +20,12 @@ func HandleTransaction(conn net.Conn) {
 		return
 	}
 
+	err = ValidateTransaction(tx)
+	if err != nil {
+		LogError(err.Error())
+		return
+	}
+
 	mempool := NewMempool()
 	mempool.AddTransaction(tx)
 
