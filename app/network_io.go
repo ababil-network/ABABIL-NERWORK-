@@ -6,9 +6,19 @@ import (
 )
 
 func SendJSON(conn net.Conn, data any) error {
-	return json.NewEncoder(conn).Encode(data)
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	return WriteFrame(conn, payload)
 }
 
 func ReceiveJSON(conn net.Conn, data any) error {
-	return json.NewDecoder(conn).Decode(data)
+	payload, err := ReadFrame(conn)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(payload, data)
 }

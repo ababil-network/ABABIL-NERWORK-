@@ -9,5 +9,5 @@ var (
 	ErrInvalidNodeID   = errors.New("invalid node id")
 	ErrUnknownMessage  = errors.New("unknown network message")
 	ErrInvalidNonce    = errors.New("invalid nonce")
-	ErrMessageTooLarge = errors.New("message too large")
+	ErrMessageTooLarge = errors.New("message exceeds maximum size")
 )

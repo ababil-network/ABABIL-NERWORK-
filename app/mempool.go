@@ -1,5 +1,7 @@
 package app
 
+const MaxMempoolTransactions = 10000
+
 type Mempool struct {
 	Transactions []Transaction
 }
@@ -11,6 +13,16 @@ func NewMempool() *Mempool {
 }
 
 func (m *Mempool) AddTransaction(tx Transaction) {
+
+	for _, existing := range m.Transactions {
+		if existing.Hash == tx.Hash {
+			return
+		}
+	}
+	if len(m.Transactions) >= MaxMempoolTransactions {
+		return
+	}
+
 	m.Transactions = append(m.Transactions, tx)
 
 	// Sort by priority
