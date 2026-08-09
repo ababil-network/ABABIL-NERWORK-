@@ -112,3 +112,12 @@ func TestGetLatestBlockIgnoresInvalidFiles(t *testing.T) {
 		t.Fatalf("latest height mismatch: got %d, want 5", latest.Height)
 	}
 }
+func TestGetLatestBlockEmptyStorage(t *testing.T) {
+	setupBlockStorageTest(t)
+
+	_, err := GetLatestBlock()
+
+	if err == nil {
+		t.Fatal("expected error when block storage is empty")
+	}
+}
