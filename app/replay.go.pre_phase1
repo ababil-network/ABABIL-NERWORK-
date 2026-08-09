@@ -1,9 +1,6 @@
 package app
 
-import (
-	"errors"
-	"sync"
-)
+import "sync"
 
 type ReplayManager struct {
 	mu   sync.RWMutex
@@ -14,47 +11,23 @@ var NodeReplay = &ReplayManager{
 	seen: make(map[string]bool),
 }
 
-// Check returns true if the transaction hash has not been seen.
+// Check returns true if the transaction hash has NOT been seen before.
 func (r *ReplayManager) Check(hash string) bool {
-	if hash == "" {
-		return false
-	}
-
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	return !r.seen[hash]
 }
 
-// Add marks a transaction hash as processed.
+// Add marks a transaction hash as already processed.
 func (r *ReplayManager) Add(hash string) {
-	if hash == "" {
-		return
-	}
-
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.seen[hash] = true
 }
 
-// TryAdd atomically checks and records a transaction hash.
-func (r *ReplayManager) TryAdd(hash string) error {
-	if hash == "" {
-		return errors.New("empty transaction hash")
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.seen[hash] {
-		return errors.New("replay transaction detected")
-	}
-
-	r.seen[hash] = true
-	return nil
-}
-
+// Remove deletes a transaction hash (useful if a transaction is dropped).
 func (r *ReplayManager) Remove(hash string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -62,6 +35,7 @@ func (r *ReplayManager) Remove(hash string) {
 	delete(r.seen, hash)
 }
 
+// Exists returns true if the transaction hash already exists.
 func (r *ReplayManager) Exists(hash string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

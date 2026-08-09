@@ -19,6 +19,5 @@ const (
 	Bech32Prefix = "ababil"
 
 	// Block Target
-	TargetBlockTime        = "1s"
-	MaxGasLimit     uint64 = 10000000
+	TargetBlockTime = "1s"
 )

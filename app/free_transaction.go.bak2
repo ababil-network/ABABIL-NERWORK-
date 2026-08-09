@@ -49,13 +49,13 @@ func (m *FreeTransactionManager) Remaining(address string) uint64 {
 		return 0
 	}
 
-	limit := WalletFreeLimit(address)
+        limit := WalletFreeLimit(address)
 
-	if info.Count >= limit {
-		return 0
-	}
+if info.Count >= limit {
+	return 0
+}
 
-	return limit - info.Count
+return limit - info.Count
 }
 
 func (m *FreeTransactionManager) Use(address string) bool {
@@ -80,25 +80,11 @@ func (m *FreeTransactionManager) Use(address string) bool {
 
 	limit := WalletFreeLimit(address)
 
-	if info.Count >= limit {
-		return false
+if info.Count >= limit {
+	return false
 	}
 
 	info.Count++
 
 	return true
-}
-
-func (m *FreeTransactionManager) Rollback(address string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	info, ok := m.data[address]
-	if !ok {
-		return
-	}
-
-	if info.Count > 0 {
-		info.Count--
-	}
 }

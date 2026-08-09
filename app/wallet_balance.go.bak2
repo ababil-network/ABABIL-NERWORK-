@@ -1,24 +1,15 @@
 package app
 
-import (
-	"errors"
-	"math"
-	"sync"
-)
+import "errors"
 
 type WalletBalance struct {
 	Address string
 	Balance uint64
 }
 
-var (
-	walletBalanceMu sync.RWMutex
-	WalletBalances  []WalletBalance
-)
+var WalletBalances []WalletBalance
 
 func GetBalance(address string) uint64 {
-	walletBalanceMu.RLock()
-	defer walletBalanceMu.RUnlock()
 
 	for _, w := range WalletBalances {
 		if w.Address == address {
@@ -30,22 +21,17 @@ func GetBalance(address string) uint64 {
 }
 
 func CreditBalance(address string, amount uint64) {
-	walletBalanceMu.Lock()
-	defer walletBalanceMu.Unlock()
 
 	for i := range WalletBalances {
+
 		if WalletBalances[i].Address == address {
-			// Never allow uint64 balance overflow.
-			if amount > math.MaxUint64-WalletBalances[i].Balance {
-				return
-			}
 
 			WalletBalances[i].Balance += amount
+
 			return
 		}
 	}
 
-	// A new balance cannot overflow because amount is uint64.
 	WalletBalances = append(WalletBalances, WalletBalance{
 		Address: address,
 		Balance: amount,
@@ -53,16 +39,17 @@ func CreditBalance(address string, amount uint64) {
 }
 
 func DebitBalance(address string, amount uint64) error {
-	walletBalanceMu.Lock()
-	defer walletBalanceMu.Unlock()
 
 	for i := range WalletBalances {
+
 		if WalletBalances[i].Address == address {
+
 			if WalletBalances[i].Balance < amount {
 				return errors.New("insufficient balance")
 			}
 
 			WalletBalances[i].Balance -= amount
+
 			return nil
 		}
 	}

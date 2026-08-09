@@ -1,0 +1,96 @@
+package app
+
+import (
+	"encoding/hex"
+	"strings"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+)
+
+func VerifyTransaction(tx SignedTransaction) bool {
+	if tx.Hash == "" || tx.Signature == "" || tx.PublicKey == "" {
+		return false
+	}
+
+	digest, err := hex.DecodeString(tx.Hash)
+	if err != nil || len(digest) != 32 {
+		return false
+	}
+
+	signature, err := hex.DecodeString(tx.Signature)
+	if err != nil || len(signature) != 65 {
+		return false
+	}
+
+	publicKeyBytes, err := hex.DecodeString(tx.PublicKey)
+	if err != nil || len(publicKeyBytes) != 65 {
+		return false
+	}
+
+	recoveredKey, err := crypto.SigToPub(digest, signature)
+	if err != nil {
+		return false
+	}
+
+	recoveredBytes := crypto.FromECDSAPub(recoveredKey)
+
+	if !equalBytes(recoveredBytes, publicKeyBytes) {
+		return false
+	}
+
+	return crypto.VerifySignature(
+		publicKeyBytes,
+		digest,
+		signature[:64],
+	)
+}
+
+func VerifyTransactionSender(tx Transaction) bool {
+	if !VerifyTransaction(SignedTransaction{
+		Hash:      tx.Hash,
+		Signature: tx.Signature,
+		PublicKey: tx.PublicKey,
+	}) {
+		return false
+	}
+
+	publicKeyBytes, err := hex.DecodeString(tx.PublicKey)
+	if err != nil || len(publicKeyBytes) != 65 {
+		return false
+	}
+
+	publicKey, err := crypto.UnmarshalPubkey(publicKeyBytes)
+	if err != nil {
+		return false
+	}
+
+	recoveredAddress := crypto.PubkeyToAddress(*publicKey)
+
+	return equalAddress(recoveredAddress.Hex(), tx.From)
+}
+
+func equalBytes(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func equalAddress(a, b string) bool {
+	if !common.IsHexAddress(a) || !common.IsHexAddress(b) {
+		return false
+	}
+
+	return strings.EqualFold(
+		common.HexToAddress(a).Hex(),
+		common.HexToAddress(b).Hex(),
+	)
+}

@@ -38,15 +38,15 @@ func CalculateReward(fee uint64, mature bool) RewardPool {
 
 	if mature {
 
-		pool.Validator = calculatePercentage(fee, ValidatorRewardMature)
-		pool.Treasury = calculatePercentage(fee, TreasuryRewardMature)
-		pool.Security = calculatePercentage(fee, SecurityRewardMature)
+		pool.Validator = fee * ValidatorRewardMature / 100
+		pool.Treasury = fee * TreasuryRewardMature / 100
+		pool.Security = fee * SecurityRewardMature / 100
 
 	} else {
 
-		pool.Validator = calculatePercentage(fee, ValidatorRewardLaunch)
-		pool.Treasury = calculatePercentage(fee, TreasuryRewardLaunch)
-		pool.Security = calculatePercentage(fee, SecurityRewardLaunch)
+		pool.Validator = fee * ValidatorRewardLaunch / 100
+		pool.Treasury = fee * TreasuryRewardLaunch / 100
+		pool.Security = fee * SecurityRewardLaunch / 100
 	}
 
 	return pool
