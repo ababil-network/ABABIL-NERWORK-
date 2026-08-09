@@ -8,16 +8,13 @@ import (
 )
 
 func LoadBlock(height int) (Block, error) {
-	home, err := os.UserHomeDir()
+	dir, err := BlockStorageDir()
 	if err != nil {
 		return Block{}, err
 	}
 
 	file := filepath.Join(
-		home,
-		".ababil",
-		"data",
-		"blocks",
+		dir,
 		fmt.Sprintf("%d.json", height),
 	)
 
@@ -28,8 +25,7 @@ func LoadBlock(height int) (Block, error) {
 
 	var block Block
 
-	err = json.Unmarshal(data, &block)
-	if err != nil {
+	if err := json.Unmarshal(data, &block); err != nil {
 		return Block{}, err
 	}
 
@@ -37,12 +33,10 @@ func LoadBlock(height int) (Block, error) {
 }
 
 func GetLatestBlock() (Block, error) {
-	home, err := os.UserHomeDir()
+	dir, err := BlockStorageDir()
 	if err != nil {
 		return Block{}, err
 	}
-
-	dir := filepath.Join(home, ".ababil", "data", "blocks")
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -57,6 +51,7 @@ func GetLatestBlock() (Block, error) {
 		}
 
 		var height int
+
 		_, err := fmt.Sscanf(entry.Name(), "%d.json", &height)
 		if err != nil {
 			continue
