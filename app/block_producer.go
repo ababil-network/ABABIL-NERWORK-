@@ -1,37 +1,28 @@
 package app
 
-import (
-	"crypto/rand"
-	"encoding/hex"
-	"time"
-)
-
-func GenerateBlockHash() string {
-	b := make([]byte, 32)
-
-	_, err := rand.Read(b)
-	if err != nil {
-		return ""
-	}
-
-	return hex.EncodeToString(b)
-}
+import "time"
 
 func ProduceBlock(height int, previousHash string) Block {
-	txs := NodeMempool.Transactions
+	txs := NodeMempool.Snapshot()
 
 	if len(txs) > MaxTransactionsPerBlock {
 		txs = txs[:MaxTransactionsPerBlock]
 	}
+
 	block := Block{
 		Height:       height,
-		Hash:         GenerateBlockHash(),
 		PreviousHash: previousHash,
-		Timestamp:    time.Now().Format(time.RFC3339),
+		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
 		Transactions: txs,
 	}
 
-	NodeMempool.RemoveProcessedTransactions(block.Transactions)
+	hash, err := GenerateBlockHash(block)
+	if err != nil {
+		LogError("failed to generate block hash: " + err.Error())
+		return Block{}
+	}
+
+	block.Hash = hash
 
 	leader := GetLeader()
 
@@ -41,5 +32,6 @@ func ProduceBlock(height int, previousHash string) Block {
 		LogInfo("Leader : " + leader.Address)
 		LogInfo("=================================")
 	}
+
 	return block
 }

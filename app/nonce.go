@@ -31,12 +31,17 @@ func (n *NonceManager) Set(address string, nonce uint64) {
 func (n *NonceManager) Next(address string) uint64 {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.nonces[address] == math.MaxUint64 {
-		return n.nonces[address]
-	}
-	n.nonces[address]++
 
-	return n.nonces[address]
+	current := n.nonces[address]
+
+	if current == math.MaxUint64 {
+		return current
+	}
+
+	current++
+	n.nonces[address] = current
+
+	return current
 }
 
 func (n *NonceManager) Verify(address string, nonce uint64) bool {
@@ -51,14 +56,12 @@ func (n *NonceManager) Verify(address string, nonce uint64) bool {
 
 	return nonce == current+1
 }
-func (n *NonceManager) Reset(address string) {
 
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	n.nonces[address] = 0
-}
-
+// TrySet atomically verifies that nonce is exactly the next nonce
+// and commits it if valid.
+//
+// This operation must be used during transaction execution instead
+// of performing Verify followed later by Set.
 func (n *NonceManager) TrySet(address string, nonce uint64) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -77,6 +80,11 @@ func (n *NonceManager) TrySet(address string, nonce uint64) bool {
 	return true
 }
 
+// Rollback restores the previous nonce only when the current nonce
+// is exactly the reserved nonce.
+//
+// This prevents an older failed transaction from rolling back a
+// newer transaction's nonce.
 func (n *NonceManager) Rollback(address string, nonce uint64) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -94,4 +102,11 @@ func (n *NonceManager) Rollback(address string, nonce uint64) bool {
 
 	n.nonces[address] = nonce - 1
 	return true
+}
+
+func (n *NonceManager) Reset(address string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.nonces[address] = 0
 }

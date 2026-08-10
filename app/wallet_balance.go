@@ -6,6 +6,12 @@ import (
 	"sync"
 )
 
+var (
+	ErrBalanceOverflow   = errors.New("balance overflow")
+	ErrInsufficientFunds = errors.New("insufficient balance")
+	ErrWalletNotFound    = errors.New("wallet not found")
+)
+
 type WalletBalance struct {
 	Address string
 	Balance uint64
@@ -29,27 +35,35 @@ func GetBalance(address string) uint64 {
 	return 0
 }
 
-func CreditBalance(address string, amount uint64) {
+// CreditBalance adds amount to an existing wallet balance.
+//
+// IMPORTANT:
+// A failed credit must never silently look like a successful state
+// transition. The function therefore returns an error on overflow.
+func CreditBalance(address string, amount uint64) error {
 	walletBalanceMu.Lock()
 	defer walletBalanceMu.Unlock()
 
 	for i := range WalletBalances {
-		if WalletBalances[i].Address == address {
-			// Never allow uint64 balance overflow.
-			if amount > math.MaxUint64-WalletBalances[i].Balance {
-				return
-			}
-
-			WalletBalances[i].Balance += amount
-			return
+		if WalletBalances[i].Address != address {
+			continue
 		}
+
+		if amount > math.MaxUint64-WalletBalances[i].Balance {
+			return ErrBalanceOverflow
+		}
+
+		WalletBalances[i].Balance += amount
+		return nil
 	}
 
-	// A new balance cannot overflow because amount is uint64.
+	// amount itself is uint64, therefore a new balance cannot overflow.
 	WalletBalances = append(WalletBalances, WalletBalance{
 		Address: address,
 		Balance: amount,
 	})
+
+	return nil
 }
 
 func DebitBalance(address string, amount uint64) error {
@@ -57,15 +71,17 @@ func DebitBalance(address string, amount uint64) error {
 	defer walletBalanceMu.Unlock()
 
 	for i := range WalletBalances {
-		if WalletBalances[i].Address == address {
-			if WalletBalances[i].Balance < amount {
-				return errors.New("insufficient balance")
-			}
-
-			WalletBalances[i].Balance -= amount
-			return nil
+		if WalletBalances[i].Address != address {
+			continue
 		}
+
+		if WalletBalances[i].Balance < amount {
+			return ErrInsufficientFunds
+		}
+
+		WalletBalances[i].Balance -= amount
+		return nil
 	}
 
-	return errors.New("wallet not found")
+	return ErrWalletNotFound
 }

@@ -1,44 +1,73 @@
 package app
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 const MaxTransactionsPerBlock = 5000
 
 func ValidateBlock(block Block, previous Block) error {
-
-	// Height check
+	// Height check.
 	if block.Height != previous.Height+1 {
 		return errors.New("invalid block height")
 	}
 
-	// Empty block check
+	// Empty block check.
 	if len(block.Transactions) == 0 {
 		return errors.New("empty block")
 	}
 
-	// Maximum transaction limit
+	// Maximum transaction limit.
 	if len(block.Transactions) > MaxTransactionsPerBlock {
 		return errors.New("too many transactions")
 	}
 
-        // Previous Hash check
-        if block.PreviousHash != previous.Hash {
-                return errors.New("invalid previous hash")
-        }
+	// Previous hash check.
+	if block.PreviousHash != previous.Hash {
+		return errors.New("invalid previous hash")
+	}
 
-        // Duplicate Transaction check
-        seen := make(map[string]bool)
-        for _, tx := range block.Transactions {
-                if seen[tx.Hash] {
-                        return errors.New("duplicate transaction")
-                }
-                seen[tx.Hash] = true
-        }
+	// Timestamp must be valid.
+	if block.Timestamp == "" {
+		return errors.New("invalid block timestamp")
+	}
 
-	// Block hash check
+	if _, err := parseBlockTimestamp(block.Timestamp); err != nil {
+		return err
+	}
+
+	// Duplicate transaction check.
+	seen := make(map[string]struct{}, len(block.Transactions))
+
+	for _, tx := range block.Transactions {
+		if tx.Hash == "" {
+			return errors.New("invalid transaction hash")
+		}
+
+		hash := strings.ToLower(tx.Hash)
+
+		if _, exists := seen[hash]; exists {
+			return errors.New("duplicate transaction")
+		}
+
+		seen[hash] = struct{}{}
+	}
+
+	// Block hash must exist.
 	if block.Hash == "" {
 		return errors.New("invalid block hash")
 	}
-        
+
+	// Recalculate the block hash from canonical block data.
+	expectedHash, err := GenerateBlockHash(block)
+	if err != nil {
+		return err
+	}
+
+	if !strings.EqualFold(block.Hash, expectedHash) {
+		return errors.New("block hash mismatch")
+	}
+
 	return nil
 }
