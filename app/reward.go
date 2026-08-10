@@ -1,6 +1,10 @@
 package app
 
-import "time"
+import (
+	"errors"
+	"math"
+	"time"
+)
 
 const (
 	ValidatorRewardLaunch = 80
@@ -10,6 +14,11 @@ const (
 	ValidatorRewardMature = 80
 	TreasuryRewardMature  = 15
 	SecurityRewardMature  = 5
+)
+
+var (
+	errRewardPoolOverflow = errors.New("reward pool balance overflow")
+	errRewardHistoryFull  = errors.New("reward history ID overflow")
 )
 
 type RewardPool struct {
@@ -29,21 +38,16 @@ type RewardRecord struct {
 }
 
 var CurrentRewardPool RewardPool
-
 var RewardHistory []RewardRecord
 
 func CalculateReward(fee uint64, mature bool) RewardPool {
-
 	var pool RewardPool
 
 	if mature {
-
 		pool.Validator = calculatePercentage(fee, ValidatorRewardMature)
 		pool.Treasury = calculatePercentage(fee, TreasuryRewardMature)
 		pool.Security = calculatePercentage(fee, SecurityRewardMature)
-
 	} else {
-
 		pool.Validator = calculatePercentage(fee, ValidatorRewardLaunch)
 		pool.Treasury = calculatePercentage(fee, TreasuryRewardLaunch)
 		pool.Security = calculatePercentage(fee, SecurityRewardLaunch)
@@ -52,79 +56,163 @@ func CalculateReward(fee uint64, mature bool) RewardPool {
 	return pool
 }
 
-func UpdateRewardPool(pool RewardPool) {
+// UpdateRewardPool adds a reward pool atomically.
+// If any field would overflow, no field is modified.
+func UpdateRewardPool(pool RewardPool) error {
+	if pool.Validator > math.MaxUint64-CurrentRewardPool.Validator {
+		return errRewardPoolOverflow
+	}
+
+	if pool.Treasury > math.MaxUint64-CurrentRewardPool.Treasury {
+		return errRewardPoolOverflow
+	}
+
+	if pool.Security > math.MaxUint64-CurrentRewardPool.Security {
+		return errRewardPoolOverflow
+	}
 
 	CurrentRewardPool.Validator += pool.Validator
 	CurrentRewardPool.Treasury += pool.Treasury
 	CurrentRewardPool.Security += pool.Security
+
+	return nil
 }
 
-func AddRewardHistory(record RewardRecord) {
+func AddRewardHistory(record RewardRecord) error {
+	if uint64(len(RewardHistory)) == math.MaxUint64 {
+		return errRewardHistoryFull
+	}
 
-	record.ID = uint64(len(RewardHistory) + 1)
-
+	record.ID = uint64(len(RewardHistory)) + 1
 	RewardHistory = append(RewardHistory, record)
+
+	return nil
 }
+
 func DistributeReward(
 	validator string,
 	block uint64,
 	fee uint64,
 	mature bool,
-) {
+) error {
 	if fee == 0 {
-		return
+		return nil
 	}
 
 	leader := GetLeader()
-
 	if leader == nil {
-		return
+		return nil
 	}
 
 	if leader.Address != validator {
-		return
+		return nil
 	}
 
 	if leader.Jailed || !leader.Active {
-		return
+		return nil
 	}
+
 	pool := CalculateReward(fee, mature)
 
-	UpdateRewardPool(pool)
+	// Validate every state mutation before changing anything.
+	if pool.Validator > math.MaxUint64-CurrentRewardPool.Validator {
+		return errRewardPoolOverflow
+	}
 
-	DepositTreasury(pool.Treasury, pool.Security)
+	if pool.Treasury > math.MaxUint64-CurrentRewardPool.Treasury {
+		return errRewardPoolOverflow
+	}
 
-	record := RewardRecord{
+	if pool.Security > math.MaxUint64-CurrentRewardPool.Security {
+		return errRewardPoolOverflow
+	}
+
+	if pool.Treasury > math.MaxUint64-NetworkTreasury.Ecosystem {
+		return errTreasuryOverflow
+	}
+
+	if pool.Security > math.MaxUint64-NetworkTreasury.Security {
+		return errTreasuryOverflow
+	}
+
+	if pool.Treasury > math.MaxUint64-pool.Security {
+		return errTreasuryRecordOverflow
+	}
+
+	if uint64(len(RewardHistory)) == math.MaxUint64 {
+		return errRewardHistoryFull
+	}
+
+	// All overflow checks passed. Commit the complete distribution.
+	CurrentRewardPool.Validator += pool.Validator
+	CurrentRewardPool.Treasury += pool.Treasury
+	CurrentRewardPool.Security += pool.Security
+
+	NetworkTreasury.Ecosystem += pool.Treasury
+	NetworkTreasury.Security += pool.Security
+
+	TreasuryHistory = append(TreasuryHistory, TreasuryRecord{
+		ID:     uint64(len(TreasuryHistory)) + 1,
+		Type:   "Deposit",
+		Amount: pool.Treasury + pool.Security,
+		Reason: "Reward Distribution",
+		Block:  block,
+		Time:   time.Now(),
+	})
+
+	RewardHistory = append(RewardHistory, RewardRecord{
+		ID:        uint64(len(RewardHistory)) + 1,
 		Validator: validator,
 		Block:     block,
 		Fee:       fee,
 		Reward:    pool.Validator,
 		Time:      time.Now(),
 		Claimed:   false,
-	}
+	})
 
-	AddRewardHistory(record)
+	return nil
 }
-func ClaimReward(validator string) uint64 {
 
+func ClaimReward(validator string) uint64 {
 	var total uint64
 
 	for i := range RewardHistory {
+		if RewardHistory[i].Validator != validator ||
+			RewardHistory[i].Claimed {
+			continue
+		}
 
+		reward := RewardHistory[i].Reward
+
+		if reward > math.MaxUint64-total {
+			// Never wrap the accumulated reward.
+			return 0
+		}
+
+		total += reward
+	}
+
+	if total == 0 {
+		return 0
+	}
+
+	// Do not mark rewards claimed until the balance credit succeeds.
+	if GetBalance(validator) > math.MaxUint64-total {
+		return 0
+	}
+
+	CreditBalance(validator, total)
+
+	for i := range RewardHistory {
 		if RewardHistory[i].Validator == validator &&
 			!RewardHistory[i].Claimed {
-
-			total += RewardHistory[i].Reward
-
 			RewardHistory[i].Claimed = true
 		}
 	}
 
-	if total > 0 {
-		CreditBalance(validator, total)
-	}
 	return total
 }
+
 func GetRewardPool() RewardPool {
 	return CurrentRewardPool
 }
