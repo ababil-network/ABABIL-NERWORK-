@@ -38,7 +38,7 @@ func TestMempoolRemoveProcessed(t *testing.T) {
 		t.Fatal("processed transaction was not removed")
 	}
 
-	if mempool.Transactions[0].Hash != "tx2" {
+	if mempool.Snapshot()[0].Hash != "tx2" {
 		t.Fatal("wrong transaction remains")
 	}
 }

@@ -1,18 +1,10 @@
 package app
 
-import "sort"
-
+// SortByPriority orders the mempool from highest fee to lowest fee.
+// Transactions with equal fees are ordered oldest-first.
 func (m *Mempool) SortByPriority() {
-	sort.Slice(m.Transactions, func(i, j int) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-		// Higher fee first
-		if m.Transactions[i].Fee != m.Transactions[j].Fee {
-			return m.Transactions[i].Fee > m.Transactions[j].Fee
-		}
-
-		// Same fee -> older transaction first
-		return m.Transactions[i].Timestamp.Before(
-			m.Transactions[j].Timestamp,
-		)
-	})
+	m.sortByPriorityLocked()
 }
