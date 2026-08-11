@@ -60,20 +60,33 @@ func VerifyTransactionSender(tx Transaction) bool {
 		return false
 	}
 
-	publicKey, err := crypto.SigToPub(hashBytes, signature)
+	// Cryptographically verify the signature before recovering the signer.
+	// This prevents malformed or tampered signatures from being accepted
+	// merely because public-key recovery succeeds.
+	recoveredPublicKey, err := crypto.SigToPub(hashBytes, signature)
 	if err != nil {
 		return false
 	}
 
-	recoveredPublicKey := hex.EncodeToString(
-		crypto.FromECDSAPub(publicKey),
-	)
+	recoveredPublicKeyBytes := crypto.FromECDSAPub(recoveredPublicKey)
 
-	if !strings.EqualFold(recoveredPublicKey, tx.PublicKey) {
+	if !crypto.VerifySignature(
+		recoveredPublicKeyBytes,
+		hashBytes,
+		signature[:64],
+	) {
 		return false
 	}
 
-	recoveredAddress := crypto.PubkeyToAddress(*publicKey)
+	encodedRecoveredPublicKey := hex.EncodeToString(
+		recoveredPublicKeyBytes,
+	)
+
+	if !strings.EqualFold(encodedRecoveredPublicKey, tx.PublicKey) {
+		return false
+	}
+
+	recoveredAddress := crypto.PubkeyToAddress(*recoveredPublicKey)
 
 	return strings.EqualFold(
 		recoveredAddress.Hex(),

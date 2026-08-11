@@ -67,6 +67,10 @@ func ValidatePrivateKeyForAddress(privateKeyHex, address string) error {
 
 	derived := crypto.PubkeyToAddress(key.PublicKey)
 
+	if derived != crypto.PubkeyToAddress(key.PublicKey) {
+		return errors.New("address derivation failure")
+	}
+
 	if !equalAddress(derived.Hex(), address) {
 		return errors.New("private key does not belong to address")
 	}

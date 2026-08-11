@@ -6,18 +6,54 @@ import (
 )
 
 const (
-	DefaultGasLimit uint64 = 21000
+	// Legacy compatibility value for existing test fixtures.
+	// It is NOT used by the final ABABIL transaction-fee model.
 	DefaultGasPrice uint64 = 1
+
+	DefaultGasLimit uint64 = 21000
+
+	// Reference-price unit:
+	// 1 ABABIL = referencePriceMicroUSD / 1,000,000 USD.
+	MicroUSDPerUnit uint64 = 1_000_000
 )
 
-func CalculateGasFee(limit, price uint64) (uint64, error) {
-	if price == 0 {
-		return 0, nil
+var (
+	ErrGasFeeOverflow = errors.New("transaction fee calculation overflow")
+)
+
+// CalculateNativeFeeFromReferencePrice converts a USD-equivalent
+// transaction fee into the smallest native ABABIL unit.
+//
+// feeMicroUSD:
+//
+//	transaction fee expressed in micro-USD.
+//
+// referencePriceMicroUSD:
+//
+//	price of 1 ABABIL expressed in micro-USD.
+func CalculateNativeFeeFromReferencePrice(
+	feeMicroUSD uint64,
+	referencePriceMicroUSD uint64,
+) (uint64, error) {
+	if referencePriceMicroUSD == 0 {
+		return 0, ErrInvalidReferencePrice
 	}
 
-	if limit > math.MaxUint64/price {
-		return 0, errors.New("gas fee overflow")
+	if feeMicroUSD == 0 {
+		return 0, errors.New("invalid zero USD transaction fee")
 	}
 
-	return limit * price, nil
+	if feeMicroUSD > math.MaxUint64/MicroUSDPerUnit {
+		return 0, ErrGasFeeOverflow
+	}
+
+	numerator := feeMicroUSD * MicroUSDPerUnit
+
+	fee := numerator / referencePriceMicroUSD
+
+	if fee == 0 {
+		fee = 1
+	}
+
+	return fee, nil
 }

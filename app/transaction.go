@@ -24,23 +24,48 @@ type Transaction struct {
 func GenerateTransactionID() string {
 	b := make([]byte, 16)
 
-	_, err := rand.Read(b)
-	if err != nil {
+	if _, err := rand.Read(b); err != nil {
 		return ""
 	}
 
 	return hex.EncodeToString(b)
 }
 
+// NewTransaction creates a transaction using the final ABABIL
+// load-based USD-equivalent fee architecture.
+//
+// GasPrice is retained in the transaction structure for compatibility,
+// but it is no longer used to determine the final transaction fee.
+//
+// The final fee is:
+//
+//	network load
+//	    -> USD-equivalent fee
+//	    -> validated ABABIL reference price
+//	    -> native ABABIL fee
 func NewTransaction(from, to string, amount uint64) Transaction {
 	gasLimit := DefaultGasLimit
-	gasPrice := NodeDynamicFee.GasPrice()
-	fee := NodeDynamicFee.CalculateFee(gasLimit)
 
-	// Daily Free Transaction.
-	if NodeFreeTransaction.Remaining(from) > 0 {
-		gasPrice = 0
+	var fee uint64
+	var gasPrice uint64
+
+	// Free transactions are decided before reference-price fee calculation.
+	// This allows a wallet with remaining daily quota to create a valid
+	// zero-fee transaction without requiring a live reference price.
+	if NodeFreeTransaction != nil && NodeFreeTransaction.Remaining(from) > 0 {
 		fee = 0
+		gasPrice = 0
+	} else {
+		// Paid transactions use the final ABABIL USD-equivalent fee policy.
+		var err error
+		fee, err = CalculateFinalNativeFee()
+		if err != nil {
+			return Transaction{}
+		}
+
+		// GasPrice is retained only for compatibility.
+		// It is not used to calculate the final fee.
+		gasPrice = 0
 	}
 
 	tx := Transaction{
@@ -55,8 +80,10 @@ func NewTransaction(from, to string, amount uint64) Transaction {
 		Timestamp: time.Now().UTC(),
 	}
 
-	// The transaction hash is derived from the complete canonical
-	// unsigned transaction representation.
+	if tx.ID == "" {
+		return Transaction{}
+	}
+
 	hash, err := GenerateTransactionHash(tx)
 	if err != nil {
 		return Transaction{}
@@ -65,6 +92,10 @@ func NewTransaction(from, to string, amount uint64) Transaction {
 	tx.Hash = hash
 
 	signed := SignTransaction(tx.Hash)
+
+	if signed.Signature == "" || signed.PublicKey == "" {
+		return Transaction{}
+	}
 
 	tx.Signature = signed.Signature
 	tx.PublicKey = signed.PublicKey

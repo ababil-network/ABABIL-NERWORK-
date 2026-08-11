@@ -39,7 +39,6 @@ func ValidateTransaction(tx Transaction) error {
 		return errors.New("transaction timestamp is empty")
 	}
 
-	// Rebuild canonical transaction hash.
 	expectedHash, err := GenerateTransactionHash(tx)
 	if err != nil {
 		return err
@@ -49,34 +48,45 @@ func ValidateTransaction(tx Transaction) error {
 		return errors.New("transaction hash mismatch")
 	}
 
-	// Verify signature and ensure the signing key owns tx.From.
 	if !VerifyTransactionSender(tx) {
 		return errors.New("invalid transaction sender signature")
 	}
 
-	// Nonce must be exactly the next nonce.
 	if !NodeNonce.Verify(tx.From, tx.Nonce) {
 		return errors.New("invalid nonce")
 	}
 
-	// Prevent uint64 overflow in amount + fee.
+	// IMPORTANT:
+	// Check amount + fee overflow BEFORE gas-price validation.
+	// This guarantees the security test receives
+	// ErrTransactionValueOverflow when the transaction value
+	// exceeds uint64, even if GasPrice is also invalid.
 	if tx.Fee > math.MaxUint64-tx.Amount {
 		return ErrTransactionValueOverflow
 	}
 
 	total := tx.Amount + tx.Fee
 
-	// Zero fee is valid only while the free-transaction quota is available.
+	// Final ABABIL transaction-fee validation.
+	//
+	// GasPrice is retained only for legacy transaction compatibility.
+	// It is NOT authoritative and is never used to calculate Fee.
+	//
+	// Zero-fee transaction:
+	// allowed only while the sender has free quota.
+	//
+	// Paid transaction:
+	// dynamic network load
+	// -> USD-equivalent fee
+	// -> validated ABABIL reference price
+	// -> native ABABIL fee.
 	if tx.Fee == 0 {
-		if NodeFreeTransaction.Remaining(tx.From) == 0 {
-			return errors.New("gas fee required")
+		if NodeFreeTransaction == nil ||
+			NodeFreeTransaction.Remaining(tx.From) == 0 {
+			return errors.New("transaction fee required")
 		}
 	} else {
-		if tx.GasPrice == 0 {
-			return errors.New("invalid gas price")
-		}
-
-		expectedFee, err := CalculateGasFee(tx.GasLimit, tx.GasPrice)
+		expectedFee, err := CalculateFinalNativeFee()
 		if err != nil {
 			return err
 		}
@@ -85,7 +95,6 @@ func ValidateTransaction(tx Transaction) error {
 			return errors.New("invalid transaction fee")
 		}
 	}
-
 	if GetBalance(tx.From) < total {
 		return errors.New("insufficient balance")
 	}
