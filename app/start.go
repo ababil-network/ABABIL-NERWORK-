@@ -60,7 +60,7 @@ func StartNode() {
 			return
 		}
 
-		fmt.Printf("Persistent State : LOADED (height=%d)\\n", state.Height)
+		fmt.Printf("Persistent State : LOADED (height=%d)\n", state.Height)
 	} else if os.IsNotExist(err) {
 		fmt.Println("Persistent State : NEW")
 	} else {
