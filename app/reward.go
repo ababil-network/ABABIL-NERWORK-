@@ -59,6 +59,9 @@ func CalculateReward(fee uint64, mature bool) RewardPool {
 // UpdateRewardPool adds a reward pool atomically.
 // If any field would overflow, no field is modified.
 func UpdateRewardPool(pool RewardPool) error {
+	rewardStateMu.Lock()
+	defer rewardStateMu.Unlock()
+
 	if pool.Validator > math.MaxUint64-CurrentRewardPool.Validator {
 		return errRewardPoolOverflow
 	}
@@ -79,6 +82,9 @@ func UpdateRewardPool(pool RewardPool) error {
 }
 
 func AddRewardHistory(record RewardRecord) error {
+	rewardStateMu.Lock()
+	defer rewardStateMu.Unlock()
+
 	if uint64(len(RewardHistory)) == math.MaxUint64 {
 		return errRewardHistoryFull
 	}
@@ -114,7 +120,10 @@ func DistributeReward(
 
 	pool := CalculateReward(fee, mature)
 
-	// Validate every state mutation before changing anything.
+	rewardStateMu.Lock()
+	defer rewardStateMu.Unlock()
+
+	// Validate every shared-state mutation before changing anything.
 	if pool.Validator > math.MaxUint64-CurrentRewardPool.Validator {
 		return errRewardPoolOverflow
 	}
@@ -143,6 +152,10 @@ func DistributeReward(
 		return errRewardHistoryFull
 	}
 
+	if uint64(len(TreasuryHistory)) == math.MaxUint64 {
+		return errTreasuryRecordOverflow
+	}
+
 	// All overflow checks passed. Commit the complete distribution.
 	CurrentRewardPool.Validator += pool.Validator
 	CurrentRewardPool.Treasury += pool.Treasury
@@ -151,13 +164,15 @@ func DistributeReward(
 	NetworkTreasury.Ecosystem += pool.Treasury
 	NetworkTreasury.Security += pool.Security
 
+	now := time.Now()
+
 	TreasuryHistory = append(TreasuryHistory, TreasuryRecord{
 		ID:     uint64(len(TreasuryHistory)) + 1,
 		Type:   "Deposit",
 		Amount: pool.Treasury + pool.Security,
 		Reason: "Reward Distribution",
 		Block:  block,
-		Time:   time.Now(),
+		Time:   now,
 	})
 
 	RewardHistory = append(RewardHistory, RewardRecord{
@@ -166,7 +181,7 @@ func DistributeReward(
 		Block:     block,
 		Fee:       fee,
 		Reward:    pool.Validator,
-		Time:      time.Now(),
+		Time:      now,
 		Claimed:   false,
 	})
 
@@ -174,6 +189,9 @@ func DistributeReward(
 }
 
 func ClaimReward(validator string) uint64 {
+	rewardStateMu.Lock()
+	defer rewardStateMu.Unlock()
+
 	var total uint64
 
 	for i := range RewardHistory {
@@ -185,7 +203,6 @@ func ClaimReward(validator string) uint64 {
 		reward := RewardHistory[i].Reward
 
 		if reward > math.MaxUint64-total {
-			// Never wrap the accumulated reward.
 			return 0
 		}
 
@@ -201,7 +218,9 @@ func ClaimReward(validator string) uint64 {
 		return 0
 	}
 
-	CreditBalance(validator, total)
+	if err := CreditBalance(validator, total); err != nil {
+		return 0
+	}
 
 	for i := range RewardHistory {
 		if RewardHistory[i].Validator == validator &&
@@ -214,5 +233,8 @@ func ClaimReward(validator string) uint64 {
 }
 
 func GetRewardPool() RewardPool {
+	rewardStateMu.Lock()
+	defer rewardStateMu.Unlock()
+
 	return CurrentRewardPool
 }

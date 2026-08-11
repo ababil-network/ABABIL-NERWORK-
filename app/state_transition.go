@@ -1,7 +1,7 @@
 package app
 
 func ApplyTransaction(tx Transaction) error {
-	// Validate transaction before changing any state.
+	// Validate the complete transaction before changing any state.
 	if err := ValidateTransaction(tx); err != nil {
 		return err
 	}
@@ -11,7 +11,6 @@ func ApplyTransaction(tx Transaction) error {
 		return err
 	}
 
-	// If execution fails after replay reservation, release the reservation.
 	rollbackReplay := true
 	defer func() {
 		if rollbackReplay {
@@ -19,7 +18,21 @@ func ApplyTransaction(tx Transaction) error {
 		}
 	}()
 
-	total := tx.Amount + tx.Fee
+	// Serialize transactions from the same sender.
+	senderLock := lockSender(tx.From)
+	defer unlockSender(senderLock)
+
+	// Atomically reserve the exact next nonce.
+	if !NodeNonce.TrySet(tx.From, tx.Nonce) {
+		return ErrInvalidNonce
+	}
+
+	nonceReserved := true
+	defer func() {
+		if nonceReserved {
+			NodeNonce.Rollback(tx.From, tx.Nonce)
+		}
+	}()
 
 	// Consume free-transaction quota only for zero-fee transactions.
 	if tx.Fee == 0 {
@@ -28,36 +41,60 @@ func ApplyTransaction(tx Transaction) error {
 		}
 	}
 
-	// Sender balance.
-	if err := DebitBalance(tx.From, total); err != nil {
-		if tx.Fee == 0 {
-			// Restore the quota because the transaction did not execute.
+	freeQuotaConsumed := tx.Fee == 0
+	defer func() {
+		if freeQuotaConsumed {
 			NodeFreeTransaction.Rollback(tx.From)
 		}
+	}()
+
+	// Prevent uint64 overflow before calculating the total debit.
+	if tx.Fee > ^uint64(0)-tx.Amount {
+		return ErrTransactionValueOverflow
+	}
+
+	total := tx.Amount + tx.Fee
+
+	// TransferBalance must atomically debit the sender
+	// and credit the receiver.
+	if err := TransferBalance(
+		tx.From,
+		tx.To,
+		total,
+		tx.Amount,
+	); err != nil {
 		return err
 	}
 
-	// Receiver balance.
-	CreditBalance(tx.To, tx.Amount)
-
-	// Reward distribution.
+	// Reward distribution is part of the transaction state transition.
 	if tx.Fee > 0 {
 		leader := GetLeader()
 
 		if leader != nil {
-			DistributeReward(
+			if err := DistributeReward(
 				leader.Address,
 				0,
 				tx.Fee,
 				false,
-			)
+			); err != nil {
+				// Restore the balance mutation before returning.
+				if rollbackErr := TransferBalance(
+					tx.To,
+					tx.From,
+					tx.Amount,
+					total,
+				); rollbackErr != nil {
+					return rollbackErr
+				}
+
+				return err
+			}
 		}
 	}
 
-	// Update nonce only after successful state transition.
-	NodeNonce.Set(tx.From, tx.Nonce)
-
-	// State transition completed successfully.
+	// Everything succeeded.
+	nonceReserved = false
+	freeQuotaConsumed = false
 	rollbackReplay = false
 
 	return nil

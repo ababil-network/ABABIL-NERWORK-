@@ -61,7 +61,7 @@ func ValidateTransaction(tx Transaction) error {
 
 	// Prevent uint64 overflow in amount + fee.
 	if tx.Fee > math.MaxUint64-tx.Amount {
-		return errors.New("transaction value overflow")
+		return ErrTransactionValueOverflow
 	}
 
 	total := tx.Amount + tx.Fee

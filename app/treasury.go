@@ -31,6 +31,9 @@ var TreasuryHistory []TreasuryRecord
 // DepositTreasury adds ecosystem and security funds atomically.
 // If any balance or record amount would overflow, nothing is changed.
 func DepositTreasury(ecosystem uint64, security uint64) error {
+	rewardStateMu.Lock()
+	defer rewardStateMu.Unlock()
+
 	if ecosystem > math.MaxUint64-NetworkTreasury.Ecosystem {
 		return errTreasuryOverflow
 	}
@@ -63,5 +66,8 @@ func DepositTreasury(ecosystem uint64, security uint64) error {
 }
 
 func GetTreasuryBalance() Treasury {
+	rewardStateMu.Lock()
+	defer rewardStateMu.Unlock()
+
 	return NetworkTreasury
 }
