@@ -52,6 +52,38 @@ func StartNode() {
 
 	fmt.Println("Database : OK")
 
+	// Restore persistent wallet state after database initialization.
+	// A missing state file is valid for a fresh node.
+	if state, err := LoadPersistentState(); err == nil {
+		if err := ApplyPersistentState(state); err != nil {
+			LogError("Failed to apply persistent state: " + err.Error())
+			return
+		}
+
+		fmt.Printf("Persistent State : LOADED (height=%d)\\n", state.Height)
+	} else if os.IsNotExist(err) {
+		fmt.Println("Persistent State : NEW")
+	} else {
+		LogError("Failed to load persistent state: " + err.Error())
+		return
+	}
+
+	// Restore persistent nonce state.
+	// A missing nonce state is valid for a fresh node.
+	if nonceState, err := LoadPersistentNonceState(); err == nil {
+		if err := ApplyPersistentNonceState(nonceState); err != nil {
+			LogError("Failed to apply persistent nonce state: " + err.Error())
+			return
+		}
+
+		fmt.Println("Nonce State : LOADED")
+	} else if os.IsNotExist(err) {
+		fmt.Println("Nonce State : NEW")
+	} else {
+		LogError("Failed to load nonce state: " + err.Error())
+		return
+	}
+
 	InitMempool()
 
 	fmt.Println("Mempool : OK")
