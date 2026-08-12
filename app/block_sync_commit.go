@@ -16,9 +16,29 @@ func CommitSyncedBlocks(blocks []Block) error {
 		return fmt.Errorf("failed to get latest block: %w", err)
 	}
 
+	// The in-memory chain may be empty after startup even though the
+	// persisted blockchain already contains the current canonical tip.
+	// Synchronize the in-memory genesis/tip before committing synced blocks.
+	if len(BlockchainSnapshot()) == 0 {
+		if latest.Height == 0 {
+			if err := CommitBlock(latest); err != nil &&
+				!errors.Is(err, ErrBlockAlreadyCommitted) {
+				return fmt.Errorf("failed to initialize committed genesis: %w", err)
+			}
+		} else {
+			if err := RecoverBlockchainFromDisk(); err != nil {
+				return fmt.Errorf(
+					"failed to recover persisted blockchain before sync: %w",
+					err,
+				)
+			}
+		}
+	}
+
 	previous := latest
 
-	// Phase 1: validate the complete batch before mutating state.
+	// Phase 1:
+	// Validate the complete batch before mutating persistent or in-memory state.
 	for _, block := range blocks {
 		if err := ValidateBlock(block, previous); err != nil {
 			return fmt.Errorf(
@@ -53,7 +73,8 @@ func CommitSyncedBlocks(blocks []Block) error {
 		previous = block
 	}
 
-	// Phase 2: persist and commit.
+	// Phase 2:
+	// Persist and commit each validated block in canonical order.
 	for _, block := range blocks {
 		if err := SaveBlock(block); err != nil {
 			return fmt.Errorf(
@@ -64,7 +85,7 @@ func CommitSyncedBlocks(blocks []Block) error {
 		}
 
 		if err := CommitBlock(block); err != nil {
-			if err != ErrBlockAlreadyCommitted {
+			if !errors.Is(err, ErrBlockAlreadyCommitted) {
 				return fmt.Errorf(
 					"failed to commit synced block %d: %w",
 					block.Height,

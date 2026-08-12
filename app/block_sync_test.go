@@ -198,8 +198,8 @@ func TestCommitSyncedBlocks(t *testing.T) {
 		t.Fatalf("CommitSyncedBlocks failed: %v", err)
 	}
 
-	if len(Blockchain) != 2 {
-		t.Fatalf("committed block count mismatch: got %d, want 2", len(Blockchain))
+	if len(Blockchain) != 3 {
+		t.Fatalf("committed block count mismatch: got %d, want 3", len(Blockchain))
 	}
 
 	latest, err := GetLatestBlock()
