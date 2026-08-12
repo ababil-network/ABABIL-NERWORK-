@@ -68,33 +68,17 @@ func ValidateTransaction(tx Transaction) error {
 	total := tx.Amount + tx.Fee
 
 	// Final ABABIL transaction-fee validation.
-	//
-	// GasPrice is retained only for legacy transaction compatibility.
-	// It is NOT authoritative and is never used to calculate Fee.
-	//
-	// Zero-fee transaction:
-	// allowed only while the sender has free quota.
-	//
-	// Paid transaction:
-	// dynamic network load
-	// -> USD-equivalent fee
-	// -> validated ABABIL reference price
-	// -> native ABABIL fee.
-	if tx.Fee == 0 {
-		if NodeFreeTransaction == nil ||
-			NodeFreeTransaction.Remaining(tx.From) == 0 {
-			return errors.New("transaction fee required")
-		}
-	} else {
-		expectedFee, err := CalculateFinalNativeFee()
-		if err != nil {
-			return err
-		}
-
-		if tx.Fee != expectedFee {
-			return errors.New("invalid transaction fee")
-		}
+	// The final fee is determined exclusively by:
+	// network load -> USD-equivalent fee -> validated ABABIL reference price.
+	expectedFee, err := CalculateFinalNativeFee()
+	if err != nil {
+		return err
 	}
+
+	if tx.Fee != expectedFee {
+		return errors.New("invalid transaction fee")
+	}
+
 	if GetBalance(tx.From) < total {
 		return errors.New("insufficient balance")
 	}

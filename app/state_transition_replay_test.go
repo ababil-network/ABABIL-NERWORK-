@@ -3,6 +3,7 @@ package app
 import "testing"
 
 func TestApplyTransactionRejectsReplay(t *testing.T) {
+	setupValidFeeEnvironment(t)
 	originalBalances := WalletBalances
 	originalNonce := NodeNonce
 	originalReplay := NodeReplay

@@ -35,7 +35,7 @@ const (
 
 	// Effective target at 100% load.
 	// This represents aggressive congestion pricing.
-	FeeTargetTXPerUSDMaxLoad uint64 = 1000
+	FeeTargetTXPerUSDMaxLoad uint64 = 2000
 )
 
 var (

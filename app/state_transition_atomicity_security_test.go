@@ -162,6 +162,7 @@ func TestApplyTransactionRejectsOverflowingTotalWithoutStateChange(t *testing.T)
 }
 
 func TestApplyTransactionConcurrentSameNonce(t *testing.T) {
+	setupValidFeeEnvironment(t)
 	originalBalances := WalletBalances
 	originalNonce := NodeNonce
 	originalReplay := NodeReplay

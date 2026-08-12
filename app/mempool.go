@@ -126,5 +126,12 @@ func transactionHigherPriority(a, b Transaction) bool {
 		return a.Fee > b.Fee
 	}
 
-	return a.Timestamp.Before(b.Timestamp)
+	if !a.Timestamp.Equal(b.Timestamp) {
+		return a.Timestamp.Before(b.Timestamp)
+	}
+
+	// Deterministic final tie-breaker.
+	// Equal-fee/equal-time transactions must have
+	// identical ordering on every node.
+	return a.Hash < b.Hash
 }

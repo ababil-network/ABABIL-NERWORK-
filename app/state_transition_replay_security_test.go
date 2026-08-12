@@ -6,6 +6,7 @@ import (
 )
 
 func TestApplyTransactionConcurrentSameHashOnlyOneSucceeds(t *testing.T) {
+	setupValidFeeEnvironment(t)
 	originalBalances := WalletBalances
 	originalNonce := NodeNonce
 	originalReplay := NodeReplay
@@ -15,7 +16,6 @@ func TestApplyTransactionConcurrentSameHashOnlyOneSucceeds(t *testing.T) {
 	originalTreasury := NetworkTreasury
 	originalTreasuryHistory := TreasuryHistory
 	originalWallet := NodeWallet
-	originalFreeTransaction := NodeFreeTransaction
 
 	defer func() {
 		WalletBalances = originalBalances
@@ -27,7 +27,6 @@ func TestApplyTransactionConcurrentSameHashOnlyOneSucceeds(t *testing.T) {
 		NetworkTreasury = originalTreasury
 		TreasuryHistory = originalTreasuryHistory
 		NodeWallet = originalWallet
-		NodeFreeTransaction = originalFreeTransaction
 	}()
 
 	Validators = nil
@@ -63,13 +62,6 @@ func TestApplyTransactionConcurrentSameHashOnlyOneSucceeds(t *testing.T) {
 	RewardHistory = nil
 	NetworkTreasury = Treasury{}
 	TreasuryHistory = nil
-
-	// Give the sender a fresh free-transaction manager so the
-	// transaction can legitimately use Fee == 0.
-	NodeFreeTransaction = &FreeTransactionManager{
-		data: make(map[string]*FreeTransactionInfo),
-	}
-
 	// Build one completely valid and signed transaction.
 	tx := NewTransaction(
 		sender.Address,
@@ -126,11 +118,18 @@ func TestApplyTransactionConcurrentSameHashOnlyOneSucceeds(t *testing.T) {
 		)
 	}
 
-	if got := GetBalance(sender.Address); got != 99900 {
+	expectedFee, err := CalculateFinalNativeFee()
+	if err != nil {
+		t.Fatalf("failed to calculate expected transaction fee: %v", err)
+	}
+
+	expectedSenderBalance := uint64(100000) - tx.Amount - expectedFee
+
+	if got := GetBalance(sender.Address); got != expectedSenderBalance {
 		t.Fatalf(
 			"unexpected sender balance: got %d want %d",
 			got,
-			uint64(99900),
+			expectedSenderBalance,
 		)
 	}
 

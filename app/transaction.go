@@ -46,27 +46,11 @@ func GenerateTransactionID() string {
 func NewTransaction(from, to string, amount uint64) Transaction {
 	gasLimit := DefaultGasLimit
 
-	var fee uint64
-	var gasPrice uint64
-
-	// Free transactions are decided before reference-price fee calculation.
-	// This allows a wallet with remaining daily quota to create a valid
-	// zero-fee transaction without requiring a live reference price.
-	if NodeFreeTransaction != nil && NodeFreeTransaction.Remaining(from) > 0 {
-		fee = 0
-		gasPrice = 0
-	} else {
-		// Paid transactions use the final ABABIL USD-equivalent fee policy.
-		var err error
-		fee, err = CalculateFinalNativeFee()
-		if err != nil {
-			return Transaction{}
-		}
-
-		// GasPrice is retained only for compatibility.
-		// It is not used to calculate the final fee.
-		gasPrice = 0
+	fee, err := CalculateFinalNativeFee()
+	if err != nil {
+		return Transaction{}
 	}
+	gasPrice := uint64(0)
 
 	tx := Transaction{
 		ID:        GenerateTransactionID(),

@@ -33,21 +33,6 @@ func ApplyTransaction(tx Transaction) error {
 			NodeNonce.Rollback(tx.From, tx.Nonce)
 		}
 	}()
-
-	// Consume free-transaction quota only for zero-fee transactions.
-	if tx.Fee == 0 {
-		if !NodeFreeTransaction.Use(tx.From) {
-			return errGasFeeRequired
-		}
-	}
-
-	freeQuotaConsumed := tx.Fee == 0
-	defer func() {
-		if freeQuotaConsumed {
-			NodeFreeTransaction.Rollback(tx.From)
-		}
-	}()
-
 	// Prevent uint64 overflow before calculating the total debit.
 	if tx.Fee > ^uint64(0)-tx.Amount {
 		return ErrTransactionValueOverflow
@@ -94,7 +79,6 @@ func ApplyTransaction(tx Transaction) error {
 
 	// Everything succeeded.
 	nonceReserved = false
-	freeQuotaConsumed = false
 	rollbackReplay = false
 
 	return nil

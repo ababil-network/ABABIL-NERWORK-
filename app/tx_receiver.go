@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"net"
 )
@@ -26,10 +27,18 @@ func HandleTransaction(conn net.Conn) {
 		return
 	}
 
-	NodeMempool.AddTransaction(tx)
+	if NodeMempool == nil {
+		LogError("mempool is not initialized")
+		return
+	}
+
+	if err := NodeMempool.AdmitTransaction(tx); err != nil {
+		LogError(err.Error())
+		return
+	}
 
 	LogInfo("Added To Mempool")
-	LogInfo("Pending Transactions : 1")
+	LogInfo("Pending Transactions : " + fmt.Sprintf("%d", NodeMempool.Count()))
 
 	LogInfo("=================================")
 	LogInfo("Transaction Received")
