@@ -1,0 +1,59 @@
+package app
+
+import (
+	"fmt"
+	"testing"
+	"time"
+)
+
+func benchmarkMempoolTransaction(i int) Transaction {
+	return Transaction{
+		ID:        fmt.Sprintf("bench-tx-%d", i),
+		Hash:      fmt.Sprintf("%064x", i),
+		From:      "0x1111111111111111111111111111111111111111",
+		To:        "0x2222222222222222222222222222222222222222",
+		Amount:    uint64(i + 1),
+		Fee:       uint64((i % 1000) + 1),
+		Nonce:     uint64(i + 1),
+		Timestamp: time.Unix(int64(i), 0).UTC(),
+	}
+}
+
+func benchmarkMempoolAdd(b *testing.B, size int) {
+	b.Helper()
+
+	b.StopTimer()
+
+	mempool := NewMempool()
+
+	txs := make([]Transaction, size)
+	for i := range txs {
+		txs[i] = benchmarkMempoolTransaction(i)
+	}
+
+	b.StartTimer()
+
+	for i := 0; i < b.N; i++ {
+		mempool = NewMempool()
+
+		for _, tx := range txs {
+			mempool.AddTransaction(tx)
+		}
+	}
+}
+
+func BenchmarkMempoolAdd100(b *testing.B) {
+	benchmarkMempoolAdd(b, 100)
+}
+
+func BenchmarkMempoolAdd1000(b *testing.B) {
+	benchmarkMempoolAdd(b, 1000)
+}
+
+func BenchmarkMempoolAdd5000(b *testing.B) {
+	benchmarkMempoolAdd(b, 5000)
+}
+
+func BenchmarkMempoolAdd10000(b *testing.B) {
+	benchmarkMempoolAdd(b, 10000)
+}

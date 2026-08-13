@@ -1,0 +1,140 @@
+package app
+
+import (
+	"fmt"
+	"testing"
+	"time"
+)
+
+func benchmarkMempoolTransaction(i int) Transaction {
+	sender := i / 128
+
+	return Transaction{
+		ID:        fmt.Sprintf("bench-tx-%d", i),
+		Hash:      fmt.Sprintf("%064x", i),
+		From:      fmt.Sprintf("0x%040x", sender+1),
+		To:        "0x2222222222222222222222222222222222222222",
+		Amount:    uint64(i + 1),
+		Fee:       uint64((i % 1000) + 1),
+		Nonce:     uint64(i%128 + 1),
+		Timestamp: time.Unix(int64(i), 0).UTC(),
+	}
+}
+
+func benchmarkMempoolAdd(b *testing.B, size int) {
+	b.Helper()
+
+	b.StopTimer()
+
+	txs := make([]Transaction, size)
+	for i := range txs {
+		txs[i] = benchmarkMempoolTransaction(i)
+	}
+
+	// Initialize once outside the timed section.
+	mempool := NewMempool()
+
+	b.StartTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		for _, tx := range txs {
+			mempool.AddTransaction(tx)
+		}
+
+		// Recreate the mempool only between benchmark iterations.
+		// Keep initialization outside the timed admission path.
+		b.StopTimer()
+		mempool = NewMempool()
+		b.StartTimer()
+	}
+}
+
+func BenchmarkMempoolAdd100(b *testing.B) {
+	benchmarkMempoolAdd(b, 100)
+}
+
+func BenchmarkMempoolAdd1000(b *testing.B) {
+	benchmarkMempoolAdd(b, 1000)
+}
+
+func BenchmarkMempoolAdd5000(b *testing.B) {
+	benchmarkMempoolAdd(b, 5000)
+}
+
+func BenchmarkMempoolAdd10000(b *testing.B) {
+	benchmarkMempoolAdd(b, 10000)
+}
+
+func BenchmarkMempoolAdd25000(b *testing.B) {
+	benchmarkMempoolAdd(b, 25000)
+}
+
+func benchmarkMempoolAdmit(b *testing.B, size int) {
+	b.Helper()
+
+	b.StopTimer()
+
+	txs := make([]Transaction, size)
+	for i := range txs {
+		txs[i] = benchmarkMempoolTransaction(i)
+	}
+
+	mempool := NewMempool()
+
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		b.StartTimer()
+
+		for _, tx := range txs {
+			if err := mempool.AdmitTransaction(tx); err != nil {
+				b.Fatal(err)
+			}
+		}
+
+		b.StopTimer()
+		mempool = NewMempool()
+	}
+}
+
+func BenchmarkMempoolAdmit25000(b *testing.B) {
+	benchmarkMempoolAdmit(b, 25000)
+}
+
+func BenchmarkMempoolAdmitBatch1000(b *testing.B) {
+	benchmarkMempoolAdmitBatch(b, 1000)
+}
+
+func BenchmarkMempoolAdmitBatch5000(b *testing.B) {
+	benchmarkMempoolAdmitBatch(b, 5000)
+}
+
+func BenchmarkMempoolAdmitBatch25000(b *testing.B) {
+	benchmarkMempoolAdmitBatch(b, 25000)
+}
+
+func benchmarkMempoolAdmitBatch(b *testing.B, size int) {
+	b.Helper()
+
+	b.StopTimer()
+
+	txs := make([]Transaction, size)
+	for i := range txs {
+		txs[i] = benchmarkMempoolTransaction(i)
+	}
+
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		mempool := NewMempool()
+
+		b.StartTimer()
+
+		if err := mempool.AdmitTransactions(txs); err != nil {
+			b.Fatal(err)
+		}
+
+		b.StopTimer()
+	}
+}

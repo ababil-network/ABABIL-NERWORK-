@@ -1,0 +1,8 @@
+goos: android
+goarch: arm64
+pkg: github.com/ababil-network/ababil/app
+BenchmarkMempoolAdmitBatch1000-8    	     100	    782995 ns/op	    4158 B/op	       3 allocs/op
+BenchmarkMempoolAdmitBatch5000-8    	     100	   4352534 ns/op	   20570 B/op	       3 allocs/op
+BenchmarkMempoolAdmitBatch25000-8   	     100	  18193418 ns/op	  106686 B/op	       3 allocs/op
+PASS
+ok  	github.com/ababil-network/ababil/app	3.206s
