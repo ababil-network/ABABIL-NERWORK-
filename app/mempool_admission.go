@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"sort"
 )
 
 var (
@@ -24,9 +25,6 @@ const (
 
 // SenderPendingLimit returns the node-local pending transaction limit
 // for one sender at the current network load.
-//
-// This is a mempool admission policy only.
-// It does not change transaction validity or consensus rules.
 func SenderPendingLimit(load uint64) uint64 {
 	switch {
 	case load < FeeLoadCongestionEndPercent:
@@ -52,11 +50,14 @@ func SenderPendingLimit(load uint64) uint64 {
 	}
 }
 
-// AdmitTransaction performs the node-local mempool admission checks.
+// AdmitTransaction performs node-local mempool admission checks.
 //
-// Consensus validation must happen before calling this function.
-// This function only decides whether an already-valid transaction
-// should enter this node's mempool.
+// Consensus validation must happen before this function.
+//
+// All admission indexes are O(1):
+//   - hash lookup
+//   - sender+nonce lookup
+//   - sender pending count lookup
 func (m *Mempool) AdmitTransaction(tx Transaction) error {
 	if m == nil {
 		return ErrMempoolAdmissionFull
@@ -69,31 +70,145 @@ func (m *Mempool) AdmitTransaction(tx Transaction) error {
 		return ErrMempoolAdmissionFull
 	}
 
+	if _, exists := m.hashes[tx.Hash]; exists {
+		return ErrMempoolAdmissionDuplicateHash
+	}
+
+	senderNonce := mempoolSenderNonceKey{
+		From:  tx.From,
+		Nonce: tx.Nonce,
+	}
+
+	if _, exists := m.senderNonces[senderNonce]; exists {
+		return ErrMempoolAdmissionDuplicateNonce
+	}
+
 	load := NodeDynamicFee.Load()
 	senderLimit := SenderPendingLimit(load)
 
-	senderPending := uint64(0)
-
-	for _, existing := range m.Transactions {
-		if existing.Hash == tx.Hash {
-			return ErrMempoolAdmissionDuplicateHash
-		}
-
-		if existing.From == tx.From {
-			if existing.Nonce == tx.Nonce {
-				return ErrMempoolAdmissionDuplicateNonce
-			}
-
-			senderPending++
-		}
-	}
-
-	if senderPending >= senderLimit {
+	senderCount := m.senderCounts[tx.From]
+	if senderCount >= senderLimit {
 		return ErrMempoolAdmissionSenderLimit
 	}
 
 	m.Transactions = append(m.Transactions, tx)
-	m.sortByPriorityLocked()
+	m.hashes[tx.Hash] = struct{}{}
+	m.senderNonces[senderNonce] = struct{}{}
+	m.senderCounts[tx.From] = senderCount + 1
+
+	return nil
+}
+
+func (m *Mempool) AdmitTransactions(txs []Transaction) error {
+	if m == nil {
+		return ErrMempoolAdmissionFull
+	}
+
+	if len(txs) == 0 {
+		return nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureIndexesLocked()
+
+	if len(txs) > MaxMempoolTransactions-len(m.Transactions) {
+		return ErrMempoolAdmissionFull
+	}
+
+	load := NodeDynamicFee.Load()
+	senderLimit := SenderPendingLimit(load)
+
+	// Validate against the existing mempool first.
+	// Duplicate sender+nonce detection inside the batch is handled
+	// by sorting a compact temporary slice instead of allocating a
+	// large hash map.
+	batchIndexes := make([]uint16, len(txs))
+
+	for i, tx := range txs {
+		if _, exists := m.hashes[tx.Hash]; exists {
+			return ErrMempoolAdmissionDuplicateHash
+		}
+
+		senderNonce := mempoolSenderNonceKey{
+			From:  tx.From,
+			Nonce: tx.Nonce,
+		}
+
+		if _, exists := m.senderNonces[senderNonce]; exists {
+			return ErrMempoolAdmissionDuplicateNonce
+		}
+
+		batchIndexes[i] = uint16(i)
+	}
+
+	// Detect already ordered batches and avoid an unnecessary sort.
+	sorted := true
+	for i := 1; i < len(batchIndexes); i++ {
+		prev := txs[batchIndexes[i-1]]
+		curr := txs[batchIndexes[i]]
+
+		if prev.From > curr.From ||
+			(prev.From == curr.From && prev.Nonce > curr.Nonce) {
+			sorted = false
+			break
+		}
+	}
+
+	// Preserve deterministic sorting for unsorted batches.
+	if !sorted {
+		sort.Slice(batchIndexes, func(i, j int) bool {
+			a := txs[batchIndexes[i]]
+			b := txs[batchIndexes[j]]
+
+			if a.From != b.From {
+				return a.From < b.From
+			}
+
+			return a.Nonce < b.Nonce
+		})
+	}
+
+	for i := 0; i < len(batchIndexes); {
+		tx := txs[batchIndexes[i]]
+		j := i + 1
+
+		for j < len(batchIndexes) {
+			next := txs[batchIndexes[j]]
+
+			if next.From != tx.From {
+				break
+			}
+
+			if next.Nonce == tx.Nonce {
+				return ErrMempoolAdmissionDuplicateNonce
+			}
+
+			j++
+		}
+
+		batchCount := uint64(j - i)
+
+		if m.senderCounts[tx.From]+batchCount > senderLimit {
+			return ErrMempoolAdmissionSenderLimit
+		}
+
+		i = j
+	}
+
+	// Commit only after the entire batch passes validation.
+	for _, tx := range txs {
+		senderNonce := mempoolSenderNonceKey{
+			From:  tx.From,
+			Nonce: tx.Nonce,
+		}
+
+		m.Transactions = append(m.Transactions, tx)
+		m.hashes[tx.Hash] = struct{}{}
+		m.senderNonces[senderNonce] = struct{}{}
+		m.senderCounts[tx.From]++
+	}
 
 	return nil
 }
