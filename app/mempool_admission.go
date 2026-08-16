@@ -77,6 +77,8 @@ func (m *Mempool) AdmitTransaction(tx Transaction) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.ensureIndexesLocked()
+
 	if len(m.Transactions) >= MaxMempoolTransactions {
 		return ErrMempoolAdmissionFull
 	}

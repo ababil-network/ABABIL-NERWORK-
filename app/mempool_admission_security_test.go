@@ -1248,3 +1248,399 @@ func TestMempoolAdaptiveBatchIndexPathSelection(t *testing.T) {
 		t.Fatal("batch above uint16 boundary must use uint32 index path")
 	}
 }
+
+func TestMempoolRemoveProcessedConcurrent(t *testing.T) {
+	m := NewMempool()
+
+	const total = 1000
+	txs := make([]Transaction, total)
+
+	for i := range txs {
+		txs[i] = Transaction{
+			Hash:  fmt.Sprintf("opt17g-remove-%d", i),
+			From:  fmt.Sprintf("opt17g-sender-%d", i),
+			Nonce: uint64(i + 1),
+		}
+
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			t.Fatalf("admit tx %d: %v", i, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 10; i++ {
+		start := i * 100
+		end := start + 100
+
+		wg.Add(1)
+		go func(batch []Transaction) {
+			defer wg.Done()
+			m.RemoveProcessedTransactions(batch)
+		}(txs[start:end])
+	}
+
+	wg.Wait()
+
+	if got := m.Count(); got != 0 {
+		t.Fatalf("concurrent processed removal left %d transactions", got)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.hashes) != 0 {
+		t.Fatalf("hash index not empty after concurrent removal: %d", len(m.hashes))
+	}
+
+	if len(m.senderNonces) != 0 {
+		t.Fatalf("sender nonce index not empty after concurrent removal: %d", len(m.senderNonces))
+	}
+
+	if len(m.senderCounts) != 0 {
+		t.Fatalf("sender count index not empty after concurrent removal: %d", len(m.senderCounts))
+	}
+}
+
+func TestMempoolRemoveProcessedConcurrentOverlappingBatches(t *testing.T) {
+	m := NewMempool()
+
+	const total = 1000
+	txs := make([]Transaction, total)
+
+	for i := range txs {
+		txs[i] = Transaction{
+			Hash:  fmt.Sprintf("opt17g-overlap-%d", i),
+			From:  fmt.Sprintf("opt17g-overlap-sender-%d", i),
+			Nonce: uint64(i + 1),
+		}
+
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			t.Fatalf("admit tx %d: %v", i, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 20; i++ {
+		start := (i * 50) % total
+		batch := make([]Transaction, 100)
+
+		for j := range batch {
+			batch[j] = txs[(start+j)%total]
+		}
+
+		wg.Add(1)
+		go func(batch []Transaction) {
+			defer wg.Done()
+			m.RemoveProcessedTransactions(batch)
+		}(batch)
+	}
+
+	wg.Wait()
+
+	if got := m.Count(); got != 0 {
+		t.Fatalf("overlapping concurrent removal left %d transactions", got)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.hashes) != 0 ||
+		len(m.senderNonces) != 0 ||
+		len(m.senderCounts) != 0 {
+		t.Fatalf(
+			"indexes inconsistent after overlapping removal: hashes=%d nonces=%d senders=%d",
+			len(m.hashes),
+			len(m.senderNonces),
+			len(m.senderCounts),
+		)
+	}
+}
+
+func TestMempoolRemoveExpiredMixedWorkload(t *testing.T) {
+	m := NewMempool()
+
+	const total = 25000
+	const expiredCount = 12500
+
+	now := time.Now().UTC()
+	txs := make([]Transaction, total)
+
+	for i := range txs {
+		ts := now
+		if i < expiredCount {
+			ts = now.Add(-MempoolTransactionTTL - time.Second)
+		}
+
+		txs[i] = Transaction{
+			Hash:      fmt.Sprintf("opt17k-mixed-%d", i),
+			From:      fmt.Sprintf("opt17k-sender-%d", i),
+			Nonce:     uint64(i + 1),
+			Timestamp: ts,
+		}
+
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			t.Fatalf("admit tx %d: %v", i, err)
+		}
+	}
+
+	m.RemoveExpiredTransactions()
+
+	if got := m.Count(); got != total-expiredCount {
+		t.Fatalf("remaining transaction count = %d, want %d",
+			got, total-expiredCount)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.hashes) != total-expiredCount {
+		t.Fatalf("hash index = %d, want %d",
+			len(m.hashes), total-expiredCount)
+	}
+
+	if len(m.senderNonces) != total-expiredCount {
+		t.Fatalf("sender nonce index = %d, want %d",
+			len(m.senderNonces), total-expiredCount)
+	}
+
+	if len(m.senderCounts) != total-expiredCount {
+		t.Fatalf("sender count index = %d, want %d",
+			len(m.senderCounts), total-expiredCount)
+	}
+
+	for i := 0; i < expiredCount; i++ {
+		if _, exists := m.hashes[txs[i].Hash]; exists {
+			t.Fatalf("expired transaction still indexed: %s", txs[i].Hash)
+		}
+	}
+
+	for i := expiredCount; i < total; i++ {
+		if _, exists := m.hashes[txs[i].Hash]; !exists {
+			t.Fatalf("live transaction missing from hash index: %s", txs[i].Hash)
+		}
+	}
+}
+
+func TestMempoolRemoveExpiredMixedWorkloadConcurrent(t *testing.T) {
+	m := NewMempool()
+
+	const total = 10000
+	const expiredCount = 5000
+
+	now := time.Now().UTC()
+	txs := make([]Transaction, total)
+
+	for i := range txs {
+		ts := now
+		if i < expiredCount {
+			ts = now.Add(-MempoolTransactionTTL - time.Second)
+		}
+
+		txs[i] = Transaction{
+			Hash:      fmt.Sprintf("opt17k-concurrent-%d", i),
+			From:      fmt.Sprintf("opt17k-concurrent-sender-%d", i),
+			Nonce:     uint64(i + 1),
+			Timestamp: ts,
+		}
+
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			t.Fatalf("admit tx %d: %v", i, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		m.RemoveExpiredTransactions()
+	}()
+
+	go func() {
+		defer wg.Done()
+		m.RemoveExpiredTransactions()
+	}()
+
+	wg.Wait()
+
+	if got := m.Count(); got != total-expiredCount {
+		t.Fatalf("remaining transaction count = %d, want %d",
+			got, total-expiredCount)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.hashes) != total-expiredCount ||
+		len(m.senderNonces) != total-expiredCount ||
+		len(m.senderCounts) != total-expiredCount {
+		t.Fatalf(
+			"indexes inconsistent: hashes=%d nonces=%d senders=%d",
+			len(m.hashes),
+			len(m.senderNonces),
+			len(m.senderCounts),
+		)
+	}
+}
+
+func TestMempoolIndexInvariantsAfterMixedRemoval(t *testing.T) {
+	m := NewMempool()
+
+	const total = 1000
+	txs := make([]Transaction, total)
+
+	for i := range txs {
+		txs[i] = Transaction{
+			Hash:      fmt.Sprintf("opt17m1-hash-%d", i),
+			From:      fmt.Sprintf("opt17m1-sender-%d", i),
+			Nonce:     uint64(i + 1),
+			Timestamp: time.Now().UTC(),
+		}
+
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			t.Fatalf("admit tx %d: %v", i, err)
+		}
+	}
+
+	// Remove half as processed.
+	m.RemoveProcessedTransactions(txs[:500])
+
+	// Make the remaining half expired.
+	m.mu.Lock()
+	for i := range m.Transactions {
+		m.Transactions[i].Timestamp =
+			time.Now().UTC().Add(-MempoolTransactionTTL - time.Second)
+	}
+	m.mu.Unlock()
+
+	m.RemoveExpiredTransactions()
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.Transactions) != 0 {
+		t.Fatalf("transactions not empty: %d", len(m.Transactions))
+	}
+
+	if len(m.hashes) != 0 {
+		t.Fatalf("hash index not empty: %d", len(m.hashes))
+	}
+
+	if len(m.senderNonces) != 0 {
+		t.Fatalf("sender nonce index not empty: %d", len(m.senderNonces))
+	}
+
+	if len(m.senderCounts) != 0 {
+		t.Fatalf("sender count index not empty: %d", len(m.senderCounts))
+	}
+}
+
+func TestMempoolIndexInvariantReAdmissionAfterMixedRemoval(t *testing.T) {
+	m := NewMempool()
+
+	const total = 1200
+	txs := make([]Transaction, total)
+
+	for i := range txs {
+		txs[i] = Transaction{
+			Hash:      fmt.Sprintf("opt17n2-hash-%d", i),
+			From:      fmt.Sprintf("opt17n2-sender-%d", i),
+			Nonce:     uint64(i + 1),
+			Timestamp: time.Now().UTC(),
+		}
+
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			t.Fatalf("initial admission %d failed: %v", i, err)
+		}
+	}
+
+	// Remove the first third as processed.
+	m.RemoveProcessedTransactions(txs[:400])
+
+	// Expire the next third.
+	m.mu.Lock()
+	for i := range m.Transactions {
+		if i < 400 {
+			m.Transactions[i].Timestamp =
+				time.Now().UTC().Add(-MempoolTransactionTTL - time.Second)
+		}
+	}
+	m.mu.Unlock()
+
+	m.RemoveExpiredTransactions()
+
+	m.mu.RLock()
+	remaining := len(m.Transactions)
+	hashes := len(m.hashes)
+	nonces := len(m.senderNonces)
+	senders := len(m.senderCounts)
+	m.mu.RUnlock()
+
+	if remaining != hashes || remaining != nonces {
+		t.Fatalf(
+			"index cardinality mismatch after mixed removal: tx=%d hashes=%d nonces=%d",
+			remaining, hashes, nonces,
+		)
+	}
+
+	if remaining != 400 || senders != 400 {
+		t.Fatalf(
+			"unexpected remaining state: tx=%d senders=%d want tx=400 senders=400",
+			remaining, senders,
+		)
+	}
+
+	// Re-admit the removed transactions. This verifies that processed/expired
+	// removal released every admission index correctly.
+	for i := 0; i < 800; i++ {
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			t.Fatalf("re-admission %d failed: %v", i, err)
+		}
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.Transactions) != 1200 {
+		t.Fatalf("unexpected transaction count after re-admission: %d", len(m.Transactions))
+	}
+
+	if len(m.hashes) != 1200 {
+		t.Fatalf("unexpected hash index count after re-admission: %d", len(m.hashes))
+	}
+
+	if len(m.senderNonces) != 1200 {
+		t.Fatalf("unexpected sender nonce index count after re-admission: %d", len(m.senderNonces))
+	}
+
+	if len(m.senderCounts) != 1200 {
+		t.Fatalf("unexpected sender count index count after re-admission: %d", len(m.senderCounts))
+	}
+}
+
+func TestMempoolZeroValueAdmissionInitializesIndexes(t *testing.T) {
+	var m Mempool
+
+	tx := Transaction{
+		Hash:      "opt17m1-zero-value",
+		From:      "opt17m1-zero-sender",
+		Nonce:     1,
+		Timestamp: time.Now().UTC(),
+	}
+
+	if err := m.AdmitTransaction(tx); err != nil {
+		t.Fatalf("zero-value mempool admission failed: %v", err)
+	}
+
+	if m.Count() != 1 {
+		t.Fatalf("expected 1 transaction, got %d", m.Count())
+	}
+
+	m.RemoveProcessedTransactions([]Transaction{tx})
+
+	if m.Count() != 0 {
+		t.Fatalf("expected empty mempool after removal, got %d", m.Count())
+	}
+}

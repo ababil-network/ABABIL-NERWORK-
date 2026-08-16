@@ -10,15 +10,70 @@ func benchmarkMempoolTransaction(i int) Transaction {
 	sender := i / 128
 
 	return Transaction{
-		ID:        fmt.Sprintf("bench-tx-%d", i),
-		Hash:      fmt.Sprintf("%064x", i),
-		From:      fmt.Sprintf("0x%040x", sender+1),
-		To:        "0x2222222222222222222222222222222222222222",
+		ID:        benchmarkTransactionID(i),
+		Hash:      benchmarkTransactionHash(i),
+		From:      benchmarkSender(sender),
+		To:        benchmarkBenchmarkTo,
 		Amount:    uint64(i + 1),
 		Fee:       uint64((i % 1000) + 1),
 		Nonce:     uint64(i%128 + 1),
 		Timestamp: time.Unix(int64(i), 0).UTC(),
 	}
+}
+
+const benchmarkBenchmarkTo = "0x2222222222222222222222222222222222222222"
+
+func benchmarkTransactionID(i int) string {
+	return "bench-tx-" + benchmarkDecimal(i)
+}
+
+func benchmarkTransactionHash(i int) string {
+	return benchmarkHex64(i)
+}
+
+func benchmarkSender(sender int) string {
+	return "0x" + benchmarkHex40(sender+1)
+}
+
+func benchmarkDecimal(v int) string {
+	if v == 0 {
+		return "0"
+	}
+
+	var buf [20]byte
+	pos := len(buf)
+
+	for v > 0 {
+		pos--
+		buf[pos] = byte('0' + v%10)
+		v /= 10
+	}
+
+	return string(buf[pos:])
+}
+
+func benchmarkHex64(v int) string {
+	const hex = "0123456789abcdef"
+
+	var buf [64]byte
+	for i := len(buf) - 1; i >= 0; i-- {
+		buf[i] = hex[v&0xf]
+		v >>= 4
+	}
+
+	return string(buf[:])
+}
+
+func benchmarkHex40(v int) string {
+	const hex = "0123456789abcdef"
+
+	var buf [40]byte
+	for i := len(buf) - 1; i >= 0; i-- {
+		buf[i] = hex[v&0xf]
+		v >>= 4
+	}
+
+	return string(buf[:])
 }
 
 func benchmarkMempoolAdd(b *testing.B, size int) {
@@ -219,5 +274,117 @@ func BenchmarkMempoolAdmitBatch25000Unsorted(b *testing.B) {
 		if err := mempool.AdmitTransactions(txs); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func BenchmarkMempoolRemoveProcessed10K(b *testing.B) {
+	m := NewMempool()
+	txs := make([]Transaction, 10000)
+
+	for i := range txs {
+		txs[i] = Transaction{
+			Hash:  fmt.Sprintf("remove-10k-%d", i),
+			From:  fmt.Sprintf("sender-%d", i%100),
+			Nonce: uint64(i + 1),
+		}
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	original := append([]Transaction(nil), m.Transactions...)
+	processed := txs[:5000]
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		m.Transactions = original
+		m.ensureIndexesLocked()
+
+		for k := range m.hashes {
+			delete(m.hashes, k)
+		}
+		for k := range m.senderNonces {
+			delete(m.senderNonces, k)
+		}
+		clear(m.senderCounts)
+
+		for _, tx := range original {
+			m.hashes[tx.Hash] = struct{}{}
+			m.senderNonces[mempoolSenderNonceKey{
+				From:  tx.From,
+				Nonce: tx.Nonce,
+			}] = struct{}{}
+			m.senderCounts[tx.From]++
+		}
+
+		m.RemoveProcessedTransactions(processed)
+	}
+}
+
+func BenchmarkMempoolRemoveProcessed25K(b *testing.B) {
+	m := NewMempool()
+	txs := make([]Transaction, 25000)
+
+	for i := range txs {
+		txs[i] = Transaction{
+			Hash:  fmt.Sprintf("remove-25k-%d", i),
+			From:  fmt.Sprintf("sender-%d", i%250),
+			Nonce: uint64(i + 1),
+		}
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	original := append([]Transaction(nil), m.Transactions...)
+	processed := txs[:12500]
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		m.Transactions = original
+		m.ensureIndexesLocked()
+
+		for k := range m.hashes {
+			delete(m.hashes, k)
+		}
+		for k := range m.senderNonces {
+			delete(m.senderNonces, k)
+		}
+		clear(m.senderCounts)
+
+		for _, tx := range original {
+			m.hashes[tx.Hash] = struct{}{}
+			m.senderNonces[mempoolSenderNonceKey{
+				From:  tx.From,
+				Nonce: tx.Nonce,
+			}] = struct{}{}
+			m.senderCounts[tx.From]++
+		}
+
+		m.RemoveProcessedTransactions(processed)
+	}
+}
+
+func BenchmarkMempoolRemoveExpired25K(b *testing.B) {
+	m := NewMempool()
+	txs := make([]Transaction, 25000)
+
+	for i := range txs {
+		txs[i] = Transaction{
+			Hash:      fmt.Sprintf("expire-25k-%d", i),
+			From:      fmt.Sprintf("sender-%d", i%250),
+			Nonce:     uint64(i + 1),
+			Timestamp: time.Now().UTC().Add(-MempoolTransactionTTL - time.Second),
+		}
+		if err := m.AdmitTransaction(txs[i]); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m.RemoveExpiredTransactions()
 	}
 }

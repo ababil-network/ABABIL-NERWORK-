@@ -39,14 +39,19 @@ type Mempool struct {
 
 	// O(1) pending transaction count per sender.
 	senderCounts map[string]uint64
+
+	// Reusable scratch index for processed-transaction removal.
+	// Protected by mu and used only by RemoveProcessedTransactions.
+	processedHashes map[string]struct{}
 }
 
 func NewMempool() *Mempool {
 	return &Mempool{
-		Transactions: make([]Transaction, 0, MaxMempoolTransactions),
-		hashes:       make(map[string]struct{}, MaxMempoolTransactions),
-		senderNonces: make(map[mempoolSenderNonceKey]struct{}, MaxMempoolTransactions),
-		senderCounts: make(map[string]uint64),
+		Transactions:    make([]Transaction, 0, MaxMempoolTransactions),
+		hashes:          make(map[string]struct{}, MaxMempoolTransactions),
+		senderNonces:    make(map[mempoolSenderNonceKey]struct{}, MaxMempoolTransactions),
+		senderCounts:    make(map[string]uint64),
+		processedHashes: make(map[string]struct{}),
 	}
 }
 
@@ -155,40 +160,39 @@ func (m *Mempool) RemoveProcessedTransactions(processed []Transaction) {
 		return
 	}
 
-	processedMap := make(map[string]struct{}, len(processed))
-
-	for _, tx := range processed {
-		if tx.Hash != "" {
-			processedMap[tx.Hash] = struct{}{}
-		}
-	}
-
-	if len(processedMap) == 0 {
-		return
-	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.ensureIndexesLocked()
 
-	remaining := make(
-		[]Transaction,
-		0,
-		len(m.Transactions),
-	)
+	if m.processedHashes == nil {
+		m.processedHashes = make(map[string]struct{}, len(processed))
+	} else {
+		clear(m.processedHashes)
+	}
 
-	for _, tx := range m.Transactions {
-		if _, processed := processedMap[tx.Hash]; processed {
+	for _, tx := range processed {
+		if tx.Hash != "" {
+			m.processedHashes[tx.Hash] = struct{}{}
+		}
+	}
+
+	if len(m.processedHashes) == 0 {
+		return
+	}
+
+	transactions := m.Transactions
+	write := 0
+
+	for read := 0; read < len(transactions); read++ {
+		tx := transactions[read]
+
+		if _, processedTx := m.processedHashes[tx.Hash]; processedTx {
 			delete(m.hashes, tx.Hash)
-
-			delete(
-				m.senderNonces,
-				mempoolSenderNonceKey{
-					From:  tx.From,
-					Nonce: tx.Nonce,
-				},
-			)
+			delete(m.senderNonces, mempoolSenderNonceKey{
+				From:  tx.From,
+				Nonce: tx.Nonce,
+			})
 
 			if count := m.senderCounts[tx.From]; count > 1 {
 				m.senderCounts[tx.From] = count - 1
@@ -199,12 +203,18 @@ func (m *Mempool) RemoveProcessedTransactions(processed []Transaction) {
 			continue
 		}
 
-		remaining = append(remaining, tx)
+		if write != read {
+			transactions[write] = tx
+		}
+		write++
 	}
 
-	m.Transactions = remaining
-}
+	for i := write; i < len(transactions); i++ {
+		transactions[i] = Transaction{}
+	}
 
+	m.Transactions = transactions[:write]
+}
 func (m *Mempool) Count() int {
 	if m == nil {
 		return 0
@@ -228,20 +238,21 @@ func (m *Mempool) RemoveExpiredTransactions() {
 
 	m.ensureIndexesLocked()
 
-	remaining := make(
-		[]Transaction,
-		0,
-		len(m.Transactions),
-	)
+	transactions := m.Transactions
+	write := 0
 
-	for _, tx := range m.Transactions {
+	for read := 0; read < len(transactions); read++ {
+		tx := transactions[read]
+
 		if now.Sub(tx.Timestamp) <= MempoolTransactionTTL {
-			remaining = append(remaining, tx)
+			if write != read {
+				transactions[write] = tx
+			}
+			write++
 			continue
 		}
 
 		delete(m.hashes, tx.Hash)
-
 		delete(
 			m.senderNonces,
 			mempoolSenderNonceKey{
@@ -257,7 +268,13 @@ func (m *Mempool) RemoveExpiredTransactions() {
 		}
 	}
 
-	m.Transactions = remaining
+	// Clear the unused tail so expired transactions do not remain
+	// referenced by the backing array.
+	for i := write; i < len(transactions); i++ {
+		transactions[i] = Transaction{}
+	}
+
+	m.Transactions = transactions[:write]
 }
 
 func (m *Mempool) sortByPriorityLocked() {
