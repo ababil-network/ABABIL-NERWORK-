@@ -1,5 +1,7 @@
 package app
 
+import "sync"
+
 type Validator struct {
 	ID           uint64
 	Address      string
@@ -14,8 +16,17 @@ type Validator struct {
 
 var Validators []Validator
 
-func AddValidator(address string, power uint64) {
+// validatorStateMu protects Validators and LeaderIndex from concurrent access.
+var validatorStateMu sync.RWMutex
 
+func AddValidator(address string, power uint64) {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
+
+	addValidatorLocked(address, power)
+}
+
+func addValidatorLocked(address string, power uint64) {
 	for _, v := range Validators {
 		if v.Address == address {
 			return
@@ -36,8 +47,10 @@ func AddValidator(address string, power uint64) {
 }
 
 func AddGenesisValidator(address string, power uint64) {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
 
-	AddValidator(address, power)
+	addValidatorLocked(address, power)
 
 	if len(Validators) > 0 {
 		Validators[0].Genesis = true
@@ -45,9 +58,10 @@ func AddGenesisValidator(address string, power uint64) {
 }
 
 func GetLeader() *Validator {
+	validatorStateMu.RLock()
+	defer validatorStateMu.RUnlock()
 
 	for i := range Validators {
-
 		if Validators[i].Active && !Validators[i].Jailed {
 			return &Validators[i]
 		}
@@ -55,16 +69,18 @@ func GetLeader() *Validator {
 
 	return nil
 }
+
 var LeaderIndex int
 
 func RotateLeader() *Validator {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
 
 	if len(Validators) == 0 {
 		return nil
 	}
 
 	for {
-
 		LeaderIndex++
 
 		if LeaderIndex >= len(Validators) {
@@ -73,7 +89,6 @@ func RotateLeader() *Validator {
 
 		if Validators[LeaderIndex].Active &&
 			!Validators[LeaderIndex].Jailed {
-
 			return &Validators[LeaderIndex]
 		}
 	}

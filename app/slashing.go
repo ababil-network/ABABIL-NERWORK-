@@ -14,14 +14,13 @@ type SlashRecord struct {
 var SlashHistory []SlashRecord
 
 func JailValidator(address string) bool {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
 
 	for i := range Validators {
-
 		if Validators[i].Address == address {
-
 			Validators[i].Jailed = true
 			Validators[i].Active = false
-
 			return true
 		}
 	}
@@ -30,15 +29,14 @@ func JailValidator(address string) bool {
 }
 
 func UnjailValidator(address string) bool {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
 
 	for i := range Validators {
-
 		if Validators[i].Address == address {
-
 			Validators[i].Jailed = false
 			Validators[i].Active = true
 			Validators[i].MissedBlocks = 0
-
 			return true
 		}
 	}

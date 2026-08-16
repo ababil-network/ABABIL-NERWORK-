@@ -13,6 +13,9 @@ var (
 )
 
 func RegisterValidator(address string, power uint64, commission uint8) error {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
+
 	if address == "" {
 		return errors.New("validator address is empty")
 	}
@@ -47,21 +50,18 @@ func RegisterValidator(address string, power uint64, commission uint8) error {
 		return err
 	}
 
-	// Lock and debit collateral before validator state is committed.
-	//
-	// This keeps validator registration fail-closed:
-	// if collateral cannot be secured, the validator is not registered.
+	// Secure collateral before committing validator state.
 	if err := DebitBalance(address, requiredCollateral); err != nil {
 		return err
 	}
 
 	if err := LockValidatorCollateral(address, slot, requiredCollateral); err != nil {
-		// Restore the balance if collateral creation fails.
 		_ = CreditBalance(address, requiredCollateral)
 		return err
 	}
 
-	AddValidator(address, power)
+	// The consensus mutex is already held, so use the locked helper.
+	addValidatorLocked(address, power)
 
 	Validators[len(Validators)-1].Commission = commission
 
@@ -72,6 +72,9 @@ func RegisterValidator(address string, power uint64, commission uint8) error {
 }
 
 func ActiveValidatorCount() int {
+	validatorStateMu.RLock()
+	defer validatorStateMu.RUnlock()
+
 	count := 0
 
 	for _, v := range Validators {
