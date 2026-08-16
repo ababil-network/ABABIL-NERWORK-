@@ -114,6 +114,10 @@ func BenchmarkMempoolAdmitBatch25000(b *testing.B) {
 	benchmarkMempoolAdmitBatch(b, 25000)
 }
 
+func BenchmarkMempoolAdmitBatch50000(b *testing.B) {
+	benchmarkMempoolAdmitBatch(b, 50000)
+}
+
 func benchmarkMempoolAdmitBatch(b *testing.B, size int) {
 	b.Helper()
 
@@ -141,5 +145,79 @@ func benchmarkMempoolAdmitBatch(b *testing.B, size int) {
 		}
 
 		b.StopTimer()
+	}
+}
+
+func BenchmarkMempoolAdmitBatch50000Unsorted(b *testing.B) {
+	b.StopTimer()
+
+	const size = 50000
+
+	txs := make([]Transaction, size)
+	for i := range txs {
+		txs[i] = benchmarkMempoolTransaction(i)
+	}
+
+	// Reverse the batch so the admission path cannot use
+	// the already-ordered fast path.
+	for i, j := 0, len(txs)-1; i < j; i, j = i+1, j-1 {
+		txs[i], txs[j] = txs[j], txs[i]
+	}
+
+	mempool := NewMempool()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+
+		mempool.Transactions = mempool.Transactions[:0]
+		clear(mempool.hashes)
+		clear(mempool.senderNonces)
+		clear(mempool.senderCounts)
+
+		b.StartTimer()
+
+		if err := mempool.AdmitTransactions(txs); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMempoolAdmitBatch25000Unsorted(b *testing.B) {
+	b.StopTimer()
+
+	const size = 25000
+
+	txs := make([]Transaction, size)
+	for i := range txs {
+		txs[i] = benchmarkMempoolTransaction(i)
+	}
+
+	// Reverse the batch so the admission path cannot use
+	// the already-ordered fast path.
+	for i, j := 0, len(txs)-1; i < j; i, j = i+1, j-1 {
+		txs[i], txs[j] = txs[j], txs[i]
+	}
+
+	mempool := NewMempool()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+
+		mempool.Transactions = mempool.Transactions[:0]
+		clear(mempool.hashes)
+		clear(mempool.senderNonces)
+		clear(mempool.senderCounts)
+
+		b.StartTimer()
+
+		if err := mempool.AdmitTransactions(txs); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

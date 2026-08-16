@@ -21,6 +21,16 @@ type Mempool struct {
 	// Transactions are kept in admission order.
 	Transactions []Transaction
 
+	// Reusable scratch indexes for unsorted batch admission.
+	//
+	// uint16 is used for batches up to 65,535 entries to minimize
+	// scratch memory. Larger batches automatically use uint32 so
+	// future 100k+ batch/mempool configurations remain safe.
+	//
+	// Protected by mu; never exposed outside admission internals.
+	batchIndexes16 []uint16
+	batchIndexes32 []uint32
+
 	// O(1) duplicate hash detection.
 	hashes map[string]struct{}
 

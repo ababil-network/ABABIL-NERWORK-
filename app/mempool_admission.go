@@ -15,6 +15,13 @@ var (
 const (
 	NormalSenderPendingLimit uint64 = 256
 
+	// maxBatchIndex16Entries is the largest batch size whose indexes
+	// can safely be represented by uint16.
+	//
+	// A batch of exactly 65,535 entries has indexes 0..65,534.
+	// The next entry count, 65,536, requires uint32.
+	maxBatchIndex16Entries = int(^uint16(0))
+
 	Congestion95SenderPendingLimit  uint64 = 128
 	Congestion96SenderPendingLimit  uint64 = 102
 	Congestion97SenderPendingLimit  uint64 = 76
@@ -22,6 +29,10 @@ const (
 	Congestion99SenderPendingLimit  uint64 = 25
 	Congestion100SenderPendingLimit uint64 = 16
 )
+
+func useBatchIndex16(batchSize int) bool {
+	return batchSize <= maxBatchIndex16Entries
+}
 
 // SenderPendingLimit returns the node-local pending transaction limit
 // for one sender at the current network load.
@@ -121,11 +132,10 @@ func (m *Mempool) AdmitTransactions(txs []Transaction) error {
 	senderLimit := SenderPendingLimit(load)
 
 	// Validate against the existing mempool first.
-	// Duplicate sender+nonce detection inside the batch is handled
-	// by sorting a compact temporary slice instead of allocating a
-	// large hash map.
-	batchIndexes := make([]uint16, len(txs))
-
+	//
+	// Fast path: already ordered batches do not allocate a temporary
+	// index slice. Unsorted batches use compact uint16 indexes.
+	sorted := true
 	for i, tx := range txs {
 		if _, exists := m.hashes[tx.Hash]; exists {
 			return ErrMempoolAdmissionDuplicateHash
@@ -140,27 +150,65 @@ func (m *Mempool) AdmitTransactions(txs []Transaction) error {
 			return ErrMempoolAdmissionDuplicateNonce
 		}
 
-		batchIndexes[i] = uint16(i)
-	}
-
-	// Detect already ordered batches and avoid an unnecessary sort.
-	sorted := true
-	for i := 1; i < len(batchIndexes); i++ {
-		prev := txs[batchIndexes[i-1]]
-		curr := txs[batchIndexes[i]]
-
-		if prev.From > curr.From ||
-			(prev.From == curr.From && prev.Nonce > curr.Nonce) {
-			sorted = false
-			break
+		if i > 0 {
+			prev := txs[i-1]
+			if prev.From > tx.From ||
+				(prev.From == tx.From && prev.Nonce > tx.Nonce) {
+				sorted = false
+			}
 		}
 	}
 
-	// Preserve deterministic sorting for unsorted batches.
-	if !sorted {
-		sort.Slice(batchIndexes, func(i, j int) bool {
-			a := txs[batchIndexes[i]]
-			b := txs[batchIndexes[j]]
+	// Unsorted batches use the smallest safe scratch index width.
+	//
+	// <= 65,535 entries: uint16.
+	// > 65,535 entries: uint32.
+	//
+	// The uint32 buffer is allocated lazily only when a batch actually
+	// requires it. This keeps the normal path memory-efficient while
+	// remaining safe for future 100k+ transaction batches.
+	if sorted {
+		for i := 0; i < len(txs); {
+			tx := txs[i]
+			j := i + 1
+
+			for j < len(txs) {
+				next := txs[j]
+
+				if next.From != tx.From {
+					break
+				}
+
+				if next.Nonce == tx.Nonce {
+					return ErrMempoolAdmissionDuplicateNonce
+				}
+
+				j++
+			}
+
+			batchCount := uint64(j - i)
+
+			if m.senderCounts[tx.From]+batchCount > senderLimit {
+				return ErrMempoolAdmissionSenderLimit
+			}
+
+			i = j
+		}
+	} else if useBatchIndex16(len(txs)) {
+		// Small unsorted batch: uint16 fast path.
+		if cap(m.batchIndexes16) < len(txs) {
+			m.batchIndexes16 = make([]uint16, len(txs))
+		} else {
+			m.batchIndexes16 = m.batchIndexes16[:len(txs)]
+		}
+
+		for i := range m.batchIndexes16 {
+			m.batchIndexes16[i] = uint16(i)
+		}
+
+		sort.Slice(m.batchIndexes16, func(i, j int) bool {
+			a := txs[m.batchIndexes16[i]]
+			b := txs[m.batchIndexes16[j]]
 
 			if a.From != b.From {
 				return a.From < b.From
@@ -168,36 +216,90 @@ func (m *Mempool) AdmitTransactions(txs []Transaction) error {
 
 			return a.Nonce < b.Nonce
 		})
-	}
 
-	for i := 0; i < len(batchIndexes); {
-		tx := txs[batchIndexes[i]]
-		j := i + 1
+		for i := 0; i < len(m.batchIndexes16); {
+			tx := txs[m.batchIndexes16[i]]
+			j := i + 1
 
-		for j < len(batchIndexes) {
-			next := txs[batchIndexes[j]]
+			for j < len(m.batchIndexes16) {
+				next := txs[m.batchIndexes16[j]]
 
-			if next.From != tx.From {
-				break
+				if next.From != tx.From {
+					break
+				}
+
+				if next.Nonce == tx.Nonce {
+					return ErrMempoolAdmissionDuplicateNonce
+				}
+
+				j++
 			}
 
-			if next.Nonce == tx.Nonce {
-				return ErrMempoolAdmissionDuplicateNonce
+			batchCount := uint64(j - i)
+
+			if m.senderCounts[tx.From]+batchCount > senderLimit {
+				return ErrMempoolAdmissionSenderLimit
 			}
 
-			j++
+			i = j
+		}
+	} else {
+		// Large unsorted batch: lazy uint32 path.
+		//
+		// This path is completely unused for batches <= 65,535.
+		if cap(m.batchIndexes32) < len(txs) {
+			m.batchIndexes32 = make([]uint32, len(txs))
+		} else {
+			m.batchIndexes32 = m.batchIndexes32[:len(txs)]
 		}
 
-		batchCount := uint64(j - i)
-
-		if m.senderCounts[tx.From]+batchCount > senderLimit {
-			return ErrMempoolAdmissionSenderLimit
+		for i := range m.batchIndexes32 {
+			m.batchIndexes32[i] = uint32(i)
 		}
 
-		i = j
+		sort.Slice(m.batchIndexes32, func(i, j int) bool {
+			a := txs[m.batchIndexes32[i]]
+			b := txs[m.batchIndexes32[j]]
+
+			if a.From != b.From {
+				return a.From < b.From
+			}
+
+			return a.Nonce < b.Nonce
+		})
+
+		for i := 0; i < len(m.batchIndexes32); {
+			tx := txs[m.batchIndexes32[i]]
+			j := i + 1
+
+			for j < len(m.batchIndexes32) {
+				next := txs[m.batchIndexes32[j]]
+
+				if next.From != tx.From {
+					break
+				}
+
+				if next.Nonce == tx.Nonce {
+					return ErrMempoolAdmissionDuplicateNonce
+				}
+
+				j++
+			}
+
+			batchCount := uint64(j - i)
+
+			if m.senderCounts[tx.From]+batchCount > senderLimit {
+				return ErrMempoolAdmissionSenderLimit
+			}
+
+			i = j
+		}
 	}
 
 	// Commit only after the entire batch passes validation.
+	//
+	// Hash and sender+nonce indexes remain per-transaction because they
+	// provide the O(1) duplicate checks required by admission.
 	for _, tx := range txs {
 		senderNonce := mempoolSenderNonceKey{
 			From:  tx.From,
@@ -207,7 +309,51 @@ func (m *Mempool) AdmitTransactions(txs []Transaction) error {
 		m.Transactions = append(m.Transactions, tx)
 		m.hashes[tx.Hash] = struct{}{}
 		m.senderNonces[senderNonce] = struct{}{}
-		m.senderCounts[tx.From]++
+	}
+
+	// Update sender counts once per sender group rather than once per
+	// transaction. This preserves the exact final counts while reducing
+	// senderCounts map writes substantially for large batches.
+	if sorted {
+		for i := 0; i < len(txs); {
+			tx := txs[i]
+			j := i + 1
+
+			for j < len(txs) && txs[j].From == tx.From {
+				j++
+			}
+
+			m.senderCounts[tx.From] += uint64(j - i)
+			i = j
+		}
+	} else if len(txs) <= maxBatchIndex16Entries {
+		// Commit counts using the same uint16 ordering used during validation.
+		for i := 0; i < len(m.batchIndexes16); {
+			tx := txs[m.batchIndexes16[i]]
+			j := i + 1
+
+			for j < len(m.batchIndexes16) &&
+				txs[m.batchIndexes16[j]].From == tx.From {
+				j++
+			}
+
+			m.senderCounts[tx.From] += uint64(j - i)
+			i = j
+		}
+	} else {
+		// Commit counts using the uint32 ordering used for large batches.
+		for i := 0; i < len(m.batchIndexes32); {
+			tx := txs[m.batchIndexes32[i]]
+			j := i + 1
+
+			for j < len(m.batchIndexes32) &&
+				txs[m.batchIndexes32[j]].From == tx.From {
+				j++
+			}
+
+			m.senderCounts[tx.From] += uint64(j - i)
+			i = j
+		}
 	}
 
 	return nil
