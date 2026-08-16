@@ -5,16 +5,20 @@ import "errors"
 const (
 	MinimumValidatorPower = 1000
 	MaximumCommission     = 20
-        MaximumValidators = 100
+	MaximumValidators     = 100
+)
+
+var (
+	ErrValidatorRegistrationInvalid = errors.New("invalid validator registration")
 )
 
 func RegisterValidator(address string, power uint64, commission uint8) error {
-
 	if address == "" {
+		return errors.New("validator address is empty")
+	}
+
 	if !IsValidAddress(address) {
-	return errors.New("invalid validator address")
-}
-	return errors.New("validator address is empty")
+		return errors.New("invalid validator address")
 	}
 
 	if power < MinimumValidatorPower {
@@ -25,14 +29,36 @@ func RegisterValidator(address string, power uint64, commission uint8) error {
 		return errors.New("invalid validator commission")
 	}
 
-if len(Validators) >= MaximumValidators {
-	return errors.New("maximum validator limit reached")
-}
+	if len(Validators) >= MaximumValidators {
+		return errors.New("maximum validator limit reached")
+	}
 
 	for _, v := range Validators {
 		if v.Address == address {
 			return errors.New("validator already exists")
 		}
+	}
+
+	// Validator slot is determined before mutating consensus state.
+	slot := uint64(len(Validators) + 1)
+
+	requiredCollateral, err := ValidatorDepositMicroABABILFromReferencePrice(slot)
+	if err != nil {
+		return err
+	}
+
+	// Lock and debit collateral before validator state is committed.
+	//
+	// This keeps validator registration fail-closed:
+	// if collateral cannot be secured, the validator is not registered.
+	if err := DebitBalance(address, requiredCollateral); err != nil {
+		return err
+	}
+
+	if err := LockValidatorCollateral(address, slot, requiredCollateral); err != nil {
+		// Restore the balance if collateral creation fails.
+		_ = CreditBalance(address, requiredCollateral)
+		return err
 	}
 
 	AddValidator(address, power)
@@ -44,12 +70,11 @@ if len(Validators) >= MaximumValidators {
 
 	return nil
 }
-func ActiveValidatorCount() int {
 
+func ActiveValidatorCount() int {
 	count := 0
 
 	for _, v := range Validators {
-
 		if v.Active && !v.Jailed {
 			count++
 		}
