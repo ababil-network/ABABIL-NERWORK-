@@ -57,13 +57,27 @@ func AddGenesisValidator(address string, power uint64) {
 	}
 }
 
-func GetLeader() *Validator {
-	validatorStateMu.RLock()
-	defer validatorStateMu.RUnlock()
+// LeaderIndex identifies the current leader position in Validators.
+// The effective leader is always an active, non-jailed validator.
+var LeaderIndex int
 
-	for i := range Validators {
-		if Validators[i].Active && !Validators[i].Jailed {
-			v := Validators[i]
+// findEligibleLeaderLocked returns the first eligible validator starting at
+// the supplied index. It also normalizes LeaderIndex to the selected validator.
+func findEligibleLeaderLocked(start int) *Validator {
+	if len(Validators) == 0 {
+		return nil
+	}
+
+	if start < 0 || start >= len(Validators) {
+		start = 0
+	}
+
+	for step := 0; step < len(Validators); step++ {
+		candidate := (start + step) % len(Validators)
+
+		if Validators[candidate].Active && !Validators[candidate].Jailed {
+			LeaderIndex = candidate
+			v := Validators[candidate]
 			return &v
 		}
 	}
@@ -71,8 +85,23 @@ func GetLeader() *Validator {
 	return nil
 }
 
-var LeaderIndex int
+// GetLeader returns the current effective leader.
+//
+// If LeaderIndex points to an inactive or jailed validator, the index is
+// normalized to the next eligible validator. This guarantees that active
+// validators are not stranded behind a jailed leader.
+func GetLeader() *Validator {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
 
+	return findEligibleLeaderLocked(LeaderIndex)
+}
+
+// RotateLeader advances from the current effective leader to the next
+// active, non-jailed validator.
+//
+// GetLeader and RotateLeader use the same eligibility rule, so they cannot
+// disagree about which validators are eligible to lead.
 func RotateLeader() *Validator {
 	validatorStateMu.Lock()
 	defer validatorStateMu.Unlock()
@@ -81,17 +110,28 @@ func RotateLeader() *Validator {
 		return nil
 	}
 
-	for {
-		LeaderIndex++
+	current := LeaderIndex
+	if current < 0 || current >= len(Validators) {
+		current = 0
+	}
 
-		if LeaderIndex >= len(Validators) {
-			LeaderIndex = 0
-		}
+	// Find the current effective leader first.
+	currentLeader := findEligibleLeaderLocked(current)
+	if currentLeader == nil {
+		return nil
+	}
 
-		if Validators[LeaderIndex].Active &&
-			!Validators[LeaderIndex].Jailed {
-			v := Validators[LeaderIndex]
+	// Advance strictly after the current leader.
+	for step := 1; step <= len(Validators); step++ {
+		candidate := (LeaderIndex + step) % len(Validators)
+
+		if Validators[candidate].Active && !Validators[candidate].Jailed {
+			LeaderIndex = candidate
+			v := Validators[candidate]
 			return &v
 		}
 	}
+
+	// Only one eligible validator exists.
+	return currentLeader
 }
