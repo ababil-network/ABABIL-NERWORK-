@@ -63,7 +63,8 @@ func GetLeader() *Validator {
 
 	for i := range Validators {
 		if Validators[i].Active && !Validators[i].Jailed {
-			return &Validators[i]
+			v := Validators[i]
+			return &v
 		}
 	}
 
@@ -89,7 +90,8 @@ func RotateLeader() *Validator {
 
 		if Validators[LeaderIndex].Active &&
 			!Validators[LeaderIndex].Jailed {
-			return &Validators[LeaderIndex]
+			v := Validators[LeaderIndex]
+			return &v
 		}
 	}
 }
