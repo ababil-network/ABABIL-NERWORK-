@@ -1620,6 +1620,115 @@ func TestMempoolIndexInvariantReAdmissionAfterMixedRemoval(t *testing.T) {
 	}
 }
 
+func TestMempoolConcurrentMixedLifecycleInvariant(t *testing.T) {
+	m := NewMempool()
+
+	const initial = 1200
+	initialTxs := make([]Transaction, initial)
+
+	for i := range initialTxs {
+		initialTxs[i] = Transaction{
+			Hash:      fmt.Sprintf("opt17n3-initial-hash-%d", i),
+			From:      fmt.Sprintf("opt17n3-initial-sender-%d", i),
+			Nonce:     uint64(i + 1),
+			Timestamp: time.Now().UTC(),
+		}
+
+		if err := m.AdmitTransaction(initialTxs[i]); err != nil {
+			t.Fatalf("initial admission %d failed: %v", i, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+
+	// Concurrent processed removal.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		m.RemoveProcessedTransactions(initialTxs[:300])
+	}()
+
+	// Concurrent expiry cleanup.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		time.Sleep(time.Millisecond)
+
+		m.mu.Lock()
+		for i := range m.Transactions {
+			if i >= 300 && i < 600 {
+				m.Transactions[i].Timestamp =
+					time.Now().UTC().Add(-MempoolTransactionTTL - time.Second)
+			}
+		}
+		m.mu.Unlock()
+
+		m.RemoveExpiredTransactions()
+	}()
+
+	// Concurrent admission of new transactions.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		for i := 0; i < 300; i++ {
+			tx := Transaction{
+				Hash:      fmt.Sprintf("opt17n3-new-hash-%d", i),
+				From:      fmt.Sprintf("opt17n3-new-sender-%d", i),
+				Nonce:     uint64(i + 1),
+				Timestamp: time.Now().UTC(),
+			}
+
+			if err := m.AdmitTransaction(tx); err != nil {
+				t.Errorf("concurrent new admission %d failed: %v", i, err)
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	txCount := len(m.Transactions)
+	hashCount := len(m.hashes)
+	nonceCount := len(m.senderNonces)
+	senderCount := len(m.senderCounts)
+
+	if txCount != hashCount || txCount != nonceCount {
+		t.Fatalf(
+			"mixed lifecycle index mismatch: tx=%d hashes=%d nonces=%d",
+			txCount,
+			hashCount,
+			nonceCount,
+		)
+	}
+
+	var countedSenders uint64
+	for _, count := range m.senderCounts {
+		countedSenders += count
+	}
+
+	if countedSenders != uint64(txCount) {
+		t.Fatalf(
+			"sender count invariant broken: tx=%d senderCountsTotal=%d",
+			txCount,
+			countedSenders,
+		)
+	}
+
+	if senderCount > txCount {
+		t.Fatalf(
+			"sender index cardinality impossible: senders=%d tx=%d",
+			senderCount,
+			txCount,
+		)
+	}
+}
+
 func TestMempoolZeroValueAdmissionInitializesIndexes(t *testing.T) {
 	var m Mempool
 
