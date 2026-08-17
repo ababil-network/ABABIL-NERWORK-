@@ -9,9 +9,16 @@ func ProduceBlock(height int, previousHash string) Block {
 		txs = txs[:MaxTransactionsPerBlock]
 	}
 
+	leader := GetLeader()
+	if leader == nil {
+		LogError("failed to produce block: no eligible proposer")
+		return Block{}
+	}
+
 	block := Block{
 		Height:       height,
 		PreviousHash: previousHash,
+		Proposer:     leader.Address,
 		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
 		Transactions: txs,
 	}
@@ -24,14 +31,10 @@ func ProduceBlock(height int, previousHash string) Block {
 
 	block.Hash = hash
 
-	leader := GetLeader()
-
-	if leader != nil {
-		LogInfo("=================================")
-		LogInfo("Block Produced")
-		LogInfo("Leader : " + leader.Address)
-		LogInfo("=================================")
-	}
+	LogInfo("=================================")
+	LogInfo("Block Produced")
+	LogInfo("Proposer : " + block.Proposer)
+	LogInfo("=================================")
 
 	return block
 }

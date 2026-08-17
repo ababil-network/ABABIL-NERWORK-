@@ -11,6 +11,26 @@ const (
 	blockProducerTestTo   = "0x2222222222222222222222222222222222222222"
 )
 
+func setupBlockProducerTestProposer(t *testing.T) {
+	t.Helper()
+
+	validatorStateMu.Lock()
+	oldValidators := append([]Validator(nil), Validators...)
+	oldLeaderIndex := LeaderIndex
+	Validators = nil
+	LeaderIndex = 0
+	validatorStateMu.Unlock()
+
+	AddValidator(blockProducerTestFrom, MinimumValidatorPower)
+
+	t.Cleanup(func() {
+		validatorStateMu.Lock()
+		Validators = oldValidators
+		LeaderIndex = oldLeaderIndex
+		validatorStateMu.Unlock()
+	})
+}
+
 func newBlockProducerTestTx(
 	t *testing.T,
 	id string,
@@ -42,6 +62,7 @@ func newBlockProducerTestTx(
 }
 
 func TestProduceBlockSelectsHighestPriorityTransactions(t *testing.T) {
+	setupBlockProducerTestProposer(t)
 	oldMempool := NodeMempool
 	defer func() {
 		NodeMempool = oldMempool
@@ -96,6 +117,7 @@ func TestProduceBlockSelectsHighestPriorityTransactions(t *testing.T) {
 }
 
 func TestProduceBlockRespectsMaxTransactionsPerBlock(t *testing.T) {
+	setupBlockProducerTestProposer(t)
 	oldMempool := NodeMempool
 	defer func() {
 		NodeMempool = oldMempool
@@ -135,6 +157,7 @@ func TestProduceBlockRespectsMaxTransactionsPerBlock(t *testing.T) {
 }
 
 func TestProduceBlockDoesNotMutateMempool(t *testing.T) {
+	setupBlockProducerTestProposer(t)
 	oldMempool := NodeMempool
 	defer func() {
 		NodeMempool = oldMempool
@@ -170,6 +193,7 @@ func TestProduceBlockDoesNotMutateMempool(t *testing.T) {
 }
 
 func TestProduceBlockEmptyMempool(t *testing.T) {
+	setupBlockProducerTestProposer(t)
 	oldMempool := NodeMempool
 	defer func() {
 		NodeMempool = oldMempool
@@ -192,6 +216,7 @@ func TestProduceBlockEmptyMempool(t *testing.T) {
 }
 
 func TestProduceBlockPreservesDeterministicPriority(t *testing.T) {
+	setupBlockProducerTestProposer(t)
 	oldMempool := NodeMempool
 	defer func() {
 		NodeMempool = oldMempool

@@ -6,11 +6,12 @@ import (
 )
 
 type Block struct {
-        Height       int
-        Hash         string
-        PreviousHash string
-        Timestamp    string
-        Transactions []Transaction
+	Height       int
+	Hash         string
+	PreviousHash string
+	Proposer     string
+	Timestamp    string
+	Transactions []Transaction
 }
 
 func CreateGenesisBlock() Block {

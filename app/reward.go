@@ -118,6 +118,34 @@ func DistributeReward(
 		return nil
 	}
 
+	return DistributeRewardForValidator(
+		validator,
+		block,
+		fee,
+		mature,
+	)
+}
+
+// DistributeRewardForValidator applies a finalized reward to the
+// explicitly authorized validator.
+//
+// The validator identity is supplied by the block-finalization path.
+// This function deliberately does not call GetLeader(), because the
+// global leader may rotate independently of the block being finalized.
+func DistributeRewardForValidator(
+	validator string,
+	block uint64,
+	fee uint64,
+	mature bool,
+) error {
+	if fee == 0 {
+		return nil
+	}
+
+	if validator == "" {
+		return nil
+	}
+
 	pool := CalculateReward(fee, mature)
 
 	rewardStateMu.Lock()
