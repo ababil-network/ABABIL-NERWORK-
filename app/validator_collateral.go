@@ -105,6 +105,147 @@ func ValidatorDepositMicroABABILFromReferencePrice(slot uint64) (uint64, error) 
 	return ValidatorDepositMicroABABIL(slot, price)
 }
 
+// reconcileValidatorCollateralsLocked recalculates security collateral for
+// every active validator according to its current dynamic slot.
+//
+// validatorStateMu must already be held by the caller.
+//
+// Permanent validator IDs are never changed by this operation.
+func reconcileValidatorCollateralsLocked() error {
+	type adjustment struct {
+		validator string
+		oldAmount uint64
+		newAmount uint64
+		slot      uint64
+	}
+
+	adjustments := make([]adjustment, 0, len(Validators))
+
+	// Low-level AddValidator/legacy state may legitimately exist without
+	// collateral records. In that state there is nothing to reconcile.
+	//
+	// Production registration always creates a collateral record before the
+	// validator becomes part of the registered validator set. Therefore an
+	// entirely empty collateral registry is a valid no-op, while a partially
+	// populated registry remains strictly validated below.
+	validatorCollateralMu.RLock()
+	if len(ValidatorCollaterals) == 0 {
+		validatorCollateralMu.RUnlock()
+		return nil
+	}
+
+	for _, validator := range Validators {
+		if !validator.Active || validator.Jailed {
+			continue
+		}
+
+		required, err := ValidatorDepositMicroABABILFromReferencePrice(validator.Slot)
+		if err != nil {
+			validatorCollateralMu.RUnlock()
+			return err
+		}
+
+		found := false
+
+		for _, collateral := range ValidatorCollaterals {
+			if collateral.Validator == validator.Address {
+				adjustments = append(adjustments, adjustment{
+					validator: validator.Address,
+					oldAmount: collateral.Amount,
+					newAmount: required,
+					slot:      validator.Slot,
+				})
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			validatorCollateralMu.RUnlock()
+			return ErrValidatorCollateralNotFound
+		}
+	}
+
+	validatorCollateralMu.RUnlock()
+
+	// Balance state must be locked for the complete validation + mutation
+	// sequence so another concurrent balance operation cannot invalidate
+	// the preflight checks.
+	walletBalanceMu.Lock()
+	defer walletBalanceMu.Unlock()
+
+	ensureWalletBalanceIndexLocked()
+
+	// Preflight every balance increase and decrease before mutating anything.
+	for _, a := range adjustments {
+		if a.newAmount > a.oldAmount {
+			additional := a.newAmount - a.oldAmount
+
+			index, ok := walletBalanceIndex[a.validator]
+			if !ok {
+				return ErrWalletNotFound
+			}
+
+			if WalletBalances[index].Balance < additional {
+				return ErrInsufficientFunds
+			}
+		}
+
+		if a.newAmount < a.oldAmount {
+			refund := a.oldAmount - a.newAmount
+
+			index, ok := walletBalanceIndex[a.validator]
+			if !ok {
+				// CreditBalance would create a wallet, but validator
+				// reconciliation must never silently create missing
+				// validator wallet state.
+				return ErrWalletNotFound
+			}
+
+			if refund > ^uint64(0)-WalletBalances[index].Balance {
+				return ErrBalanceOverflow
+			}
+		}
+	}
+
+	// Apply all balance changes atomically under walletBalanceMu.
+	for _, a := range adjustments {
+		index, ok := walletBalanceIndex[a.validator]
+		if !ok {
+			return ErrWalletNotFound
+		}
+
+		switch {
+		case a.newAmount > a.oldAmount:
+			additional := a.newAmount - a.oldAmount
+			WalletBalances[index].Balance -= additional
+
+		case a.newAmount < a.oldAmount:
+			refund := a.oldAmount - a.newAmount
+			WalletBalances[index].Balance += refund
+		}
+	}
+
+	// Update collateral records only after every balance operation has
+	// successfully passed validation and been applied.
+	validatorCollateralMu.Lock()
+	defer validatorCollateralMu.Unlock()
+
+	for i := range ValidatorCollaterals {
+		for _, a := range adjustments {
+			if ValidatorCollaterals[i].Validator != a.validator {
+				continue
+			}
+
+			ValidatorCollaterals[i].Amount = a.newAmount
+			ValidatorCollaterals[i].Slot = a.slot
+			break
+		}
+	}
+
+	return nil
+}
+
 // GetValidatorCollateral returns a snapshot of validator collateral.
 func GetValidatorCollateral(validator string) (ValidatorCollateral, error) {
 	if validator == "" {

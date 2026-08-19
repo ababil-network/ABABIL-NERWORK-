@@ -3,7 +3,13 @@ package app
 import "sync"
 
 type Validator struct {
-	ID           uint64
+	// ID is permanent and must never change after registration.
+	ID uint64
+
+	// Slot is the validator's current active position.
+	// Slot is dynamic and may change after validator-set compression.
+	Slot uint64
+
 	Address      string
 	ConsensusKey string
 	Power        uint64
@@ -26,6 +32,111 @@ func AddValidator(address string, power uint64) {
 	addValidatorLocked(address, power)
 }
 
+// nextValidatorIDLocked returns the next permanent validator ID.
+// IDs are never reused, even when validators exit.
+func nextValidatorIDLocked() uint64 {
+	var maxID uint64
+
+	for _, v := range Validators {
+		if v.ID > maxID {
+			maxID = v.ID
+		}
+	}
+
+	return maxID + 1
+}
+
+// nextValidatorSlotLocked returns the next available active slot.
+// Slots are dynamic and are assigned from the current validator count.
+func nextValidatorSlotLocked() uint64 {
+	var maxSlot uint64
+
+	for _, v := range Validators {
+		if v.Slot > maxSlot {
+			maxSlot = v.Slot
+		}
+	}
+
+	return maxSlot + 1
+}
+
+// normalizeValidatorSlotsLocked compresses active validator slots.
+// Permanent validator IDs are never modified.
+//
+// Validators that remain active receive contiguous slots starting from 1.
+// Inactive/jailed validators keep their permanent ID but do not occupy an
+// active slot.
+//
+// This function must only be called while validatorStateMu is held.
+func normalizeValidatorSlotsLocked() {
+	activeSlot := uint64(1)
+
+	for i := range Validators {
+		if Validators[i].Active && !Validators[i].Jailed {
+			Validators[i].Slot = activeSlot
+			activeSlot++
+		}
+	}
+}
+
+// ValidatorSlot returns the current dynamic slot for a validator ID.
+func ValidatorSlot(id uint64) (uint64, bool) {
+	validatorStateMu.RLock()
+	defer validatorStateMu.RUnlock()
+
+	for _, v := range Validators {
+		if v.ID == id {
+			return v.Slot, v.Active && !v.Jailed
+		}
+	}
+
+	return 0, false
+}
+
+// CompressValidatorSlots atomically rebuilds the active validator slots.
+//
+// Permanent validator IDs remain unchanged. Only active, non-jailed
+// validators receive contiguous dynamic slots.
+func compressValidatorSlotsLocked() error {
+	originalValidators := append([]Validator(nil), Validators...)
+	originalLeaderIndex := LeaderIndex
+
+	normalizeValidatorSlotsLocked()
+
+	if len(Validators) == 0 {
+		LeaderIndex = 0
+		return nil
+	}
+
+	if LeaderIndex < 0 || LeaderIndex >= len(Validators) ||
+		!Validators[LeaderIndex].Active || Validators[LeaderIndex].Jailed {
+		findEligibleLeaderLocked(LeaderIndex)
+	}
+
+	if err := reconcileValidatorCollateralsLocked(); err != nil {
+		Validators = originalValidators
+		LeaderIndex = originalLeaderIndex
+		return err
+	}
+
+	return nil
+}
+
+// CompressValidatorSlots atomically rebuilds the active validator slots.
+//
+// Permanent validator IDs remain unchanged. Only active, non-jailed
+// validators receive contiguous dynamic slots.
+//
+// Slot compression and collateral reconciliation succeed or fail together.
+func CompressValidatorSlots() {
+	validatorStateMu.Lock()
+	defer validatorStateMu.Unlock()
+
+	if err := compressValidatorSlotsLocked(); err != nil {
+		LogInfo("Validator slot compression rejected: " + err.Error())
+	}
+}
+
 func addValidatorLocked(address string, power uint64) {
 	for _, v := range Validators {
 		if v.Address == address {
@@ -34,7 +145,8 @@ func addValidatorLocked(address string, power uint64) {
 	}
 
 	Validators = append(Validators, Validator{
-		ID:           uint64(len(Validators) + 1),
+		ID:           nextValidatorIDLocked(),
+		Slot:         nextValidatorSlotLocked(),
 		Address:      address,
 		ConsensusKey: "",
 		Power:        power,

@@ -18,11 +18,26 @@ func JailValidator(address string) bool {
 	defer validatorStateMu.Unlock()
 
 	for i := range Validators {
-		if Validators[i].Address == address {
-			Validators[i].Jailed = true
-			Validators[i].Active = false
-			return true
+		if Validators[i].Address != address {
+			continue
 		}
+
+		originalValidators := append([]Validator(nil), Validators...)
+		originalLeaderIndex := LeaderIndex
+
+		// A jailed validator immediately leaves the active validator set.
+		// Its permanent ID remains unchanged.
+		Validators[i].Jailed = true
+		Validators[i].Active = false
+		Validators[i].Slot = 0
+
+		if err := compressValidatorSlotsLocked(); err != nil {
+			Validators = originalValidators
+			LeaderIndex = originalLeaderIndex
+			return false
+		}
+
+		return true
 	}
 
 	return false
@@ -33,12 +48,26 @@ func UnjailValidator(address string) bool {
 	defer validatorStateMu.Unlock()
 
 	for i := range Validators {
-		if Validators[i].Address == address {
-			Validators[i].Jailed = false
-			Validators[i].Active = true
-			Validators[i].MissedBlocks = 0
-			return true
+		if Validators[i].Address != address {
+			continue
 		}
+
+		originalValidators := append([]Validator(nil), Validators...)
+		originalLeaderIndex := LeaderIndex
+
+		// Re-enter the active validator set through the normal dynamic
+		// slot compression rule. Permanent ID is unchanged.
+		Validators[i].Jailed = false
+		Validators[i].Active = true
+		Validators[i].MissedBlocks = 0
+
+		if err := compressValidatorSlotsLocked(); err != nil {
+			Validators = originalValidators
+			LeaderIndex = originalLeaderIndex
+			return false
+		}
+
+		return true
 	}
 
 	return false

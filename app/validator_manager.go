@@ -43,7 +43,8 @@ func RegisterValidator(address string, power uint64, commission uint8) error {
 	}
 
 	// Validator slot is determined before mutating consensus state.
-	slot := uint64(len(Validators) + 1)
+	normalizeValidatorSlotsLocked()
+	slot := uint64(activeValidatorCountLocked() + 1)
 
 	requiredCollateral, err := ValidatorDepositMicroABABILFromReferencePrice(slot)
 	if err != nil {
@@ -71,10 +72,7 @@ func RegisterValidator(address string, power uint64, commission uint8) error {
 	return nil
 }
 
-func ActiveValidatorCount() int {
-	validatorStateMu.RLock()
-	defer validatorStateMu.RUnlock()
-
+func activeValidatorCountLocked() int {
 	count := 0
 
 	for _, v := range Validators {
@@ -84,4 +82,11 @@ func ActiveValidatorCount() int {
 	}
 
 	return count
+}
+
+func ActiveValidatorCount() int {
+	validatorStateMu.RLock()
+	defer validatorStateMu.RUnlock()
+
+	return activeValidatorCountLocked()
 }
