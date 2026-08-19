@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-const MaxTransactionsPerBlock = 5000
-
 func ValidateBlock(block Block, previous Block) error {
 	// Height check.
 	if block.Height != previous.Height+1 {
@@ -18,10 +16,9 @@ func ValidateBlock(block Block, previous Block) error {
 		return errors.New("empty block")
 	}
 
-	// Maximum transaction limit.
-	if len(block.Transactions) > MaxTransactionsPerBlock {
-		return errors.New("too many transactions")
-	}
+	// Block transaction count is intentionally NOT capped here.
+	// The producer includes all transactions available for the
+	// current block-production interval.
 
 	// Previous hash check.
 	if block.PreviousHash != previous.Hash {

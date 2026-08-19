@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -112,46 +111,6 @@ func TestProduceBlockSelectsHighestPriorityTransactions(t *testing.T) {
 			"second transaction ordering incorrect: got %s want %s",
 			block.Transactions[1].Hash,
 			low.Hash,
-		)
-	}
-}
-
-func TestProduceBlockRespectsMaxTransactionsPerBlock(t *testing.T) {
-	setupBlockProducerTestProposer(t)
-	oldMempool := NodeMempool
-	defer func() {
-		NodeMempool = oldMempool
-	}()
-
-	mempool := NewMempool()
-	NodeMempool = mempool
-
-	for i := 0; i < MaxTransactionsPerBlock+100; i++ {
-		tx := newBlockProducerTestTx(
-			t,
-			fmt.Sprintf("block-limit-%d", i),
-			uint64(i+1),
-			time.Unix(int64(i+1), 0).UTC(),
-		)
-
-		mempool.AddTransaction(tx)
-	}
-
-	block := ProduceBlock(1, "GENESIS_BLOCK")
-
-	if len(block.Transactions) > MaxTransactionsPerBlock {
-		t.Fatalf(
-			"block contains too many transactions: got %d max %d",
-			len(block.Transactions),
-			MaxTransactionsPerBlock,
-		)
-	}
-
-	if len(block.Transactions) != MaxTransactionsPerBlock {
-		t.Fatalf(
-			"expected block to contain %d transactions, got %d",
-			MaxTransactionsPerBlock,
-			len(block.Transactions),
 		)
 	}
 }

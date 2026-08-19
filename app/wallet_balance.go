@@ -111,6 +111,55 @@ func GetBalance(address string) uint64 {
 	return 0
 }
 
+// debitBalanceLocked performs an atomic debit while walletBalanceMu is held.
+// Caller must hold walletBalanceMu.
+func debitBalanceLocked(address string, amount uint64) error {
+	if address == "" {
+		return ErrInvalidAddress
+	}
+
+	ensureWalletBalanceIndexLocked()
+
+	index, ok := walletBalanceIndex[address]
+	if !ok {
+		return ErrWalletNotFound
+	}
+
+	if WalletBalances[index].Balance < amount {
+		return ErrInsufficientFunds
+	}
+
+	WalletBalances[index].Balance -= amount
+	return nil
+}
+
+// creditBalanceLocked performs an atomic credit while walletBalanceMu is held.
+// Caller must hold walletBalanceMu.
+func creditBalanceLocked(address string, amount uint64) error {
+	if address == "" {
+		return ErrInvalidAddress
+	}
+
+	ensureWalletBalanceIndexLocked()
+
+	if index, ok := walletBalanceIndex[address]; ok {
+		if amount > math.MaxUint64-WalletBalances[index].Balance {
+			return ErrBalanceOverflow
+		}
+
+		WalletBalances[index].Balance += amount
+		return nil
+	}
+
+	WalletBalances = append(WalletBalances, WalletBalance{
+		Address: address,
+		Balance: amount,
+	})
+
+	walletBalanceIndex[address] = len(WalletBalances) - 1
+	return nil
+}
+
 // CreditBalance atomically credits an individual wallet.
 func CreditBalance(address string, amount uint64) error {
 	if address == "" {

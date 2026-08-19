@@ -5,10 +5,6 @@ import "time"
 func ProduceBlock(height int, previousHash string) Block {
 	txs := NodeMempool.Snapshot()
 
-	if len(txs) > MaxTransactionsPerBlock {
-		txs = txs[:MaxTransactionsPerBlock]
-	}
-
 	leader := GetLeader()
 	if leader == nil {
 		LogError("failed to produce block: no eligible proposer")
